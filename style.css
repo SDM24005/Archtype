@@ -134,7 +134,7 @@ body.dark-mode .drop-overlay {
 /* --- Due Colonne Controlli a Sinistra --- */
 #left-panels {
   position: fixed;
-  top: 96px;
+  top: 78px;
   bottom: 22px;
   left: 0;
   width: calc(var(--col-w) * 2);
@@ -289,9 +289,19 @@ body.dark-mode .drop-overlay {
   color: var(--bg);
 }
 
+/* Gruppo Box di Testo con intestazione TESTO */
+.textbox-group {
+  margin-top: 36px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 /* Box di Testo chiuso in un rettangolo (max 4 parole) */
 .textbox-section {
-  margin-top: 16px;
+  width: 100%;
   padding: 8px 10px;
   border: var(--line-w) solid var(--fg);
   flex-shrink: 0;
@@ -320,15 +330,15 @@ body.dark-mode .drop-overlay {
   color: var(--muted);
 }
 
-/* 7 Slider Globali: allineati dall'alto con spazio ampio per coprire quasi tutta la colonna */
+/* 7 Slider Globali: allineati dall'alto con spazio bilanciato */
 .sliders-section {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
-  gap: clamp(16px, calc(13vh - 80px), 64px);
-  padding: clamp(26px, calc(11.2vh - 53px), 72px) 4px 8px 4px;
+  gap: clamp(14px, calc(12.2vh - 76px), 58px);
+  padding: clamp(18px, calc(9.5vh - 46px), 56px) 4px 8px 4px;
 }
 
 .slider-item {
@@ -570,10 +580,10 @@ body.dark-mode .drop-overlay {
   color: #000000;
 }
 
-/* Navigatore 3D sopra al viewport in alto a destra, allineato ai pannelli (linea rossa) */
+/* Navigatore 3D sopra al viewport in alto a destra, allineato ai pannelli */
 #nav-sphere-wrap {
   position: absolute;
-  top: 96px;
+  top: 78px;
   right: 26px;
   width: 114px;
   height: 114px;
@@ -583,10 +593,6 @@ body.dark-mode .drop-overlay {
 
 #nav-sphere-wrap.hover-dot {
   cursor: pointer;
-}
-
-#nav-sphere-wrap:active {
-  cursor: grabbing;
 }
 
 #nav-sphere-wrap:active {
@@ -620,7 +626,7 @@ body.dark-mode .drop-overlay {
   z-index: 30;
 }
 
-/* Popover Esportazione PNG Dimensioni Personalizzate */
+/* Popover Esportazione Unificato (PNG / PDF) */
 .export-popover {
   position: absolute;
   right: 26px;

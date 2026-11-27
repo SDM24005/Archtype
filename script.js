@@ -4,7 +4,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 const MAX_WORDS = 4;
 const MAX_LETTERS_PER_WORD = 15;
 const FRUSTUM_SIZE = 32;
-const MAX_CACHE_ENTRIES = 50;
+const MAX_CACHE_ENTRIES = 16;
 const DEFAULT_CAM_DIR = new THREE.Vector3(24, 14, 26).normalize();
 
 // Percorsi Font Preset
@@ -20,7 +20,6 @@ const FONT_FALLBACK_URL =
 
 const I18N = {
   it: {
-    uploadFont: 'UPLOAD FONT',
     dropFontHint: 'RILASCIA QUI IL FILE FONT (.OTF / .TTF / .WOFF)',
     placeholder: 'SCRIVI QUI',
     height: 'ALTEZZA',
@@ -52,9 +51,11 @@ const I18N = {
     pdfParams: 'PARAMETRI GLOBALI',
     pdfColumns: 'MODIFICHE COLONNE',
     pdfNone: 'NESSUNA MODIFICA SINGOLA',
+    fontLabel: 'FONT',
+    textLabel: 'TESTO',
+    uploadFont: 'CARICA FONT',
   },
   en: {
-    uploadFont: 'UPLOAD FONT',
     dropFontHint: 'DROP FONT FILE HERE (.OTF / .TTF / .WOFF)',
     placeholder: 'TYPE HERE',
     height: 'HEIGHT',
@@ -86,6 +87,9 @@ const I18N = {
     pdfParams: 'GLOBAL PARAMETERS',
     pdfColumns: 'COLUMN OVERRIDES',
     pdfNone: 'NO INDIVIDUAL OVERRIDES',
+    fontLabel: 'FONT',
+    textLabel: 'TEXT',
+    uploadFont: 'UPLOAD FONT',
   },
 };
 
@@ -108,6 +112,7 @@ const customFonts = [];
 const glyphCache = new Map();
 const wordMeshCache = new Map();
 const columnCircleEls = [];
+const meshPool = [];
 let cameraFocusAnim = null;
 
 const btnResetGlobal = document.getElementById('btn-reset-global');
@@ -177,8 +182,12 @@ const camera = new THREE.OrthographicCamera(
 );
 camera.position.copy(DEFAULT_CAM_DIR).multiplyScalar(100);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+const renderer = new THREE.WebGLRenderer({
+  antialias: true,
+  preserveDrawingBuffer: true,
+  powerPreference: 'high-performance',
+});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 renderer.setSize(viewport.clientWidth, viewport.clientHeight);
 viewport.appendChild(renderer.domElement);
 
@@ -205,15 +214,15 @@ const strokeMaterial = new THREE.MeshBasicMaterial({
   side: THREE.DoubleSide,
 });
 
-// --- Setup Navigatore 3D Trasparente ---
+// --- Setup Navigatore 3D Trasparente (Senza assi interni, sfere grandi) ---
 const navCanvas = document.getElementById('nav-sphere-canvas');
 const navRenderer = new THREE.WebGLRenderer({ canvas: navCanvas, antialias: true, alpha: true });
 navRenderer.setClearColor(0x000000, 0);
-navRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+navRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 navRenderer.setSize(114, 114);
 
 const navScene = new THREE.Scene();
-const navCamera = new THREE.OrthographicCamera(-1.32, 1.32, 1.32, -1.32, 0.1, 20);
+const navCamera = new THREE.OrthographicCamera(-1.38, 1.38, 1.38, -1.38, 0.1, 20);
 navCamera.position.set(0, 0, 5);
 
 const navGizmo = new THREE.Group();
@@ -222,15 +231,8 @@ navScene.add(navGizmo);
 const navHairlineMat = new THREE.LineBasicMaterial({
   color: 0xffffff,
   transparent: true,
-  opacity: 0.72,
-});
-const navRingMat = new THREE.MeshBasicMaterial({
-  color: 0xffffff,
-  side: THREE.DoubleSide,
-  transparent: true,
   opacity: 0.78,
 });
-navScene.add(new THREE.Mesh(new THREE.RingGeometry(0.982, 0.993, 96), navRingMat));
 
 function makeCircleLine(axis, radius = 0.986) {
   const pts = [];
@@ -243,16 +245,22 @@ function makeCircleLine(axis, radius = 0.986) {
   return new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), navHairlineMat);
 }
 
-const axesLinesGeo = new THREE.BufferGeometry().setFromPoints([
-  new THREE.Vector3(-0.98, 0, 0), new THREE.Vector3(0.98, 0, 0),
-  new THREE.Vector3(0, -0.98, 0), new THREE.Vector3(0, 0.98, 0),
-  new THREE.Vector3(0, 0, -0.98), new THREE.Vector3(0, 0, 0.98),
-]);
-navGizmo.add(new THREE.LineSegments(axesLinesGeo, navHairlineMat));
-navGizmo.add(makeCircleLine('xz'), makeCircleLine('xy'), makeCircleLine('yz'));
+// Cerchio esterno fisso con identico spessore e raggio dei cerchi interni
+navScene.add(makeCircleLine('xy', 0.986));
 
-const dotFillDefault = 0x000000; // Con mix-blend-mode: difference appare bianco su sfondo chiaro
-const dotStrokeDefault = 0xffffff; // Con mix-blend-mode: difference appare come stroke nero
+// Tre cerchi meridiani interni
+navGizmo.add(makeCircleLine('xz', 0.986), makeCircleLine('xy', 0.986), makeCircleLine('yz', 0.986));
+
+// Tre assi interni X, Y, Z con identico stile
+const axisPts = [
+  new THREE.Vector3(-0.985, 0, 0), new THREE.Vector3(0.985, 0, 0),
+  new THREE.Vector3(0, -0.985, 0), new THREE.Vector3(0, 0.985, 0),
+  new THREE.Vector3(0, 0, -0.985), new THREE.Vector3(0, 0, 0.985),
+];
+navGizmo.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(axisPts), navHairlineMat));
+
+const dotFillDefault = 0x000000;
+const dotStrokeDefault = 0xffffff;
 
 const dotGeo = new THREE.SphereGeometry(0.145, 24, 24);
 const dotOutlineGeo = new THREE.SphereGeometry(0.175, 24, 24);
@@ -270,14 +278,12 @@ let activeNavDot = null;
   const group = new THREE.Group();
   group.position.set(x, y, z);
 
-  // Bordo esterno (BackSide leggermente più grande)
   const outlineMat = new THREE.MeshBasicMaterial({
     color: dotStrokeDefault,
     side: THREE.BackSide,
   });
   const outlineMesh = new THREE.Mesh(dotOutlineGeo, outlineMat);
 
-  // Riempimento interno
   const fillMat = new THREE.MeshBasicMaterial({
     color: dotFillDefault,
   });
@@ -516,11 +522,26 @@ function formatEpigraphText(rawText) {
 
 // --- Zoom Automatico Centrato sulla Scena 3D ---
 function fitCameraToScene(resetAngle = false, customAspect = null) {
-  const box = new THREE.Box3().setFromObject(rootGroup);
+  const box = new THREE.Box3();
+  const itemBox = new THREE.Box3();
+
+  for (let i = 0; i < meshPool.length; i++) {
+    const m = meshPool[i];
+    if (!m.visible || !m.geometry) continue;
+    if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+    itemBox.copy(m.geometry.boundingBox).applyMatrix4(m.matrix);
+    box.union(itemBox);
+    
+  }
+
   if (box.isEmpty()) return;
 
   const center = new THREE.Vector3();
   box.getCenter(center);
+
+  // Sposta leggermente verso l'alto il target della camera per abbassare la base della composizione nella viewport
+  const sceneHeight = Math.max(box.max.y - box.min.y, 0.1);
+  center.y += sceneHeight * 0.065;
 
   const dir = resetAngle
     ? DEFAULT_CAM_DIR.clone()
@@ -601,7 +622,7 @@ function opentypePathToShapes(otPath) {
 
   const items = subpaths
     .map((path) => {
-      const pts = path.getPoints(12);
+      const pts = path.getPoints(10);
       return { path, pts, area: Math.abs(THREE.ShapeUtils.area(pts)) };
     })
     .filter((it) => it.pts.length >= 3 && it.area > 1e-5);
@@ -640,7 +661,7 @@ function opentypePathToShapes(otPath) {
   return solids.map((s) => s.shape);
 }
 
-function buildSheetBodyGeometry(shapes, thickness, curveSegments = 8) {
+function buildSheetBodyGeometry(shapes, thickness, curveSegments = 6) {
   if (shapes.length === 0) return new THREE.BufferGeometry();
   const geo = new THREE.ExtrudeGeometry(shapes, {
     depth: thickness,
@@ -652,7 +673,7 @@ function buildSheetBodyGeometry(shapes, thickness, curveSegments = 8) {
   return geo;
 }
 
-function buildDualStrokeGeometry(shapes, width, thickness, curveDiv = 10) {
+function buildDualStrokeGeometry(shapes, width, thickness, curveDiv = 8) {
   if (width <= 0.0005 || shapes.length === 0) return new THREE.BufferGeometry();
 
   const positions = [];
@@ -735,7 +756,7 @@ function resampleClosedContour(curvePath, center, sampleCount) {
   return [...pts.slice(topIdx), ...pts.slice(0, topIdx)];
 }
 
-function getGlyphData(char, ringSamples = 96) {
+function getGlyphData(char, ringSamples = 64) {
   const key = `${char}#${ringSamples}`;
   if (glyphCache.has(key)) return glyphCache.get(key);
 
@@ -748,7 +769,7 @@ function getGlyphData(char, ringSamples = 96) {
     return empty;
   }
 
-  const measureGeo = new THREE.ShapeGeometry(shapes, 12);
+  const measureGeo = new THREE.ShapeGeometry(shapes, 10);
   measureGeo.computeBoundingBox();
   const center = new THREE.Vector2();
   measureGeo.boundingBox.getCenter(center);
@@ -816,12 +837,12 @@ function setWordMeshCache(key, slices) {
 }
 
 function getWordSlices(validLetters, layers, totalHeightWeight, sheetThickness, highQuality = false) {
-  const ringSamples = highQuality ? 192 : 96;
-  const curveSeg = highQuality ? 18 : 8;
-  const strokeDiv = highQuality ? 18 : 10;
+  const ringSamples = highQuality ? 192 : 64;
+  const curveSeg = highQuality ? 18 : 6;
+  const strokeDiv = highQuality ? 18 : 8;
 
-  const wordKey = validLetters.map((l) => `${l.glyph.char}:${(l.h / totalHeightWeight).toFixed(3)}`).join('|');
-  const cacheKey = `${wordKey}#${layers}#${sheetThickness.toFixed(3)}#${highQuality ? 'HQ' : 'SD'}`;
+  const wordKey = validLetters.map((l) => `${l.glyph.char}:${(l.h / totalHeightWeight).toFixed(2)}`).join('|');
+  const cacheKey = `${wordKey}#${layers}#${sheetThickness.toFixed(2)}#${highQuality ? 'HQ' : 'SD'}`;
   if (wordMeshCache.has(cacheKey)) return wordMeshCache.get(cacheKey);
 
   const strokeW = 0.075;
@@ -961,14 +982,29 @@ function sampleLetterWidthAt(validLetters, totalHeightWeight, topDown) {
   return 1.0;
 }
 
-// --- Costruzione Scena 3D ---
+// --- Costruzione Scena 3D con Object Pooling (Zero Allocazioni per Frame) ---
+function getPooledMesh(index, geometry, material) {
+  let mesh = meshPool[index];
+  if (!mesh) {
+    mesh = new THREE.Mesh(geometry, material);
+    mesh.matrixAutoUpdate = false;
+    meshPool[index] = mesh;
+    rootGroup.add(mesh);
+  } else {
+    mesh.geometry = geometry;
+    mesh.material = material;
+    mesh.visible = true;
+  }
+  return mesh;
+}
+
 function rebuildScene({ resetAngle = false, fit = false, highQuality = false } = {}) {
-  while (rootGroup.children.length > 0) {
-    rootGroup.remove(rootGroup.children[0]);
+  for (let i = 0; i < meshPool.length; i++) {
+    meshPool[i].visible = false;
   }
   if (!currentFont) return;
 
-  const ringSamples = highQuality ? 192 : 96;
+  const ringSamples = highQuality ? 192 : 64;
   const activeColumns = state.words
     .map((wordObj) => ({
       wordObj,
@@ -994,6 +1030,7 @@ function rebuildScene({ resetAngle = false, fit = false, highQuality = false } =
 
   const bodyMat = [fillMaterial, strokeMaterial];
   const dummy = new THREE.Object3D();
+  let poolCursor = 0;
 
   activeColumns.forEach((col, idx) => {
     const theta = n === 1 ? Math.PI * 0.5 : Math.PI * 0.5 + (idx / n) * Math.PI * 2;
@@ -1004,7 +1041,8 @@ function rebuildScene({ resetAngle = false, fit = false, highQuality = false } =
     const totalHWeight = col.validLetters.reduce((sum, l) => sum + l.h, 0);
     const colHeight = totalHWeight * unitHeight;
 
-    const colLayers = THREE.MathUtils.clamp(Math.round(colHeight * p.sheetsPerUnit) + 1, 3, 120);
+    const maxLayers = highQuality ? 140 : 105;
+    const colLayers = THREE.MathUtils.clamp(Math.round(colHeight * p.sheetsPerUnit) + 1, 3, maxLayers);
     const slices = getWordSlices(col.validLetters, colLayers, totalHWeight, p.sheetThickness, highQuality);
 
     for (let i = 0; i < colLayers; i++) {
@@ -1025,14 +1063,12 @@ function rebuildScene({ resetAngle = false, fit = false, highQuality = false } =
       dummy.updateMatrix();
 
       if (slice.bodyGeo) {
-        const bodyMesh = new THREE.Mesh(slice.bodyGeo, bodyMat);
-        bodyMesh.applyMatrix4(dummy.matrix);
-        rootGroup.add(bodyMesh);
+        const bodyMesh = getPooledMesh(poolCursor++, slice.bodyGeo, bodyMat);
+        bodyMesh.matrix.copy(dummy.matrix);
       }
       if (slice.strokeGeo) {
-        const strokeMesh = new THREE.Mesh(slice.strokeGeo, strokeMaterial);
-        strokeMesh.applyMatrix4(dummy.matrix);
-        rootGroup.add(strokeMesh);
+        const strokeMesh = getPooledMesh(poolCursor++, slice.strokeGeo, strokeMaterial);
+        strokeMesh.matrix.copy(dummy.matrix);
       }
     }
   });
@@ -1746,7 +1782,7 @@ document.getElementById('btn-lang-toggle').addEventListener('click', (e) => {
   applyLanguage();
 });
 
-// --- Menù Selezione Font Custom (Senza duplicati e chiusura sul box superiore) ---
+// --- Menù Selezione Font Custom ---
 const fontDropdownBtn = document.getElementById('font-dropdown-btn');
 const fontDropdownMenu = document.getElementById('font-dropdown-menu');
 const fontSelectedLabel = document.getElementById('font-selected-label');
@@ -1773,8 +1809,13 @@ function loadFontFromUrl(url, name, fallbackUrl = null, initialFit = false) {
   });
 }
 
+const btnMenuUploadFont = document.getElementById('btn-menu-upload-font');
+const fontUploadInput = document.getElementById('font-upload');
+
 function refreshFontMenuVisibility() {
-  const options = Array.from(fontDropdownMenu.querySelectorAll('.font-option'));
+  const options = Array.from(
+    fontDropdownMenu.querySelectorAll('.font-option:not(.font-upload-option)')
+  );
   const visibleOptions = [];
 
   options.forEach((btn) => {
@@ -1784,15 +1825,17 @@ function refreshFontMenuVisibility() {
     if (!isSelected) visibleOptions.push(btn);
   });
 
-  if (visibleOptions.length > 0) {
-    visibleOptions[visibleOptions.length - 1].style.borderBottom = 'none';
-  }
+  // L'opzione "CARICA FONT" resta sempre visibile come ultima voce in fondo al menù
+  btnMenuUploadFont.hidden = false;
+  btnMenuUploadFont.style.borderBottom = 'none';
 }
 
 function setActiveFontOption(targetBtn) {
-  fontDropdownMenu.querySelectorAll('.font-option').forEach((btn) => {
-    btn.classList.toggle('active', btn === targetBtn);
-  });
+  fontDropdownMenu
+    .querySelectorAll('.font-option:not(.font-upload-option)')
+    .forEach((btn) => {
+      btn.classList.toggle('active', btn === targetBtn);
+    });
   refreshFontMenuVisibility();
 }
 
@@ -1801,7 +1844,6 @@ function setFontMenuOpen(open) {
   fontDropdownBtn.setAttribute('aria-expanded', String(open));
 }
 
-// Impedisce a pointerdown sul trigger di chiudere prima che scatti il click
 fontDropdownBtn.addEventListener('pointerdown', (e) => {
   e.stopPropagation();
 });
@@ -1817,6 +1859,13 @@ fontDropdownMenu.addEventListener('pointerdown', (e) => e.stopPropagation());
 fontDropdownMenu.addEventListener('click', (e) => {
   const optBtn = e.target.closest('.font-option');
   if (!optBtn) return;
+
+  // Se si clicca su "CARICA FONT", chiude il menù e apre il selettore file
+  if (optBtn.classList.contains('font-upload-option')) {
+    setFontMenuOpen(false);
+    fontUploadInput.click();
+    return;
+  }
 
   setActiveFontOption(optBtn);
   setFontMenuOpen(false);
@@ -1842,10 +1891,9 @@ function handleFontFile(file) {
         file.name.replace(/\.[^/.]+$/, '').toUpperCase().slice(0, 16) ||
         `FONT ${customFonts.length + 1}`;
 
-      // Evita duplicati se lo stesso font viene ricaricato
-      let existingBtn = Array.from(fontDropdownMenu.querySelectorAll('.font-option')).find(
-        (btn) => btn.textContent === cleanName
-      );
+      let existingBtn = Array.from(
+        fontDropdownMenu.querySelectorAll('.font-option:not(.font-upload-option)')
+      ).find((btn) => btn.textContent === cleanName);
 
       if (existingBtn && existingBtn.dataset.custom !== undefined) {
         const existingIdx = parseInt(existingBtn.dataset.custom, 10);
@@ -1857,7 +1905,8 @@ function handleFontFile(file) {
         existingBtn.className = 'font-option';
         existingBtn.dataset.custom = String(customIdx);
         existingBtn.textContent = cleanName;
-        fontDropdownMenu.appendChild(existingBtn);
+        // Inserisce il nuovo font PRIMA del pulsante "CARICA FONT" così resta sempre ultimo
+        fontDropdownMenu.insertBefore(existingBtn, btnMenuUploadFont);
       }
 
       setActiveFontOption(existingBtn);
@@ -1869,6 +1918,11 @@ function handleFontFile(file) {
   };
   reader.readAsArrayBuffer(file);
 }
+
+fontUploadInput.addEventListener('change', (e) => {
+  handleFontFile(e.target.files[0]);
+  e.target.value = '';
+});
 
 document.getElementById('font-upload').addEventListener('change', (e) => {
   handleFontFile(e.target.files[0]);
@@ -1917,6 +1971,16 @@ window.addEventListener('drop', (e) => {
 const textInput = document.getElementById('text-input');
 
 textInput.addEventListener('keydown', (e) => {
+  if (presentationState.active) {
+    e.preventDefault();
+    return;
+  }
+
+  const upperTrimmed = textInput.value.trim().toUpperCase().replace(/À/g, 'A');
+  if (e.key === ' ' && (upperTrimmed === 'MODALITA' || upperTrimmed === 'PRESENTATION')) {
+    return;
+  }
+
   if (e.key === ' ' || e.key === 'Enter') {
     e.preventDefault();
     const val = textInput.value;
@@ -1940,6 +2004,13 @@ textInput.addEventListener('keydown', (e) => {
 });
 
 textInput.addEventListener('input', (e) => {
+  if (presentationState.active) return;
+
+  if (isPresentationTrigger(e.target.value)) {
+    startPresentationMode();
+    return;
+  }
+
   const cleaned = formatEpigraphText(e.target.value);
   if (textInput.value !== cleaned) textInput.value = cleaned;
   renderColumnSelectorCircles();
@@ -1962,7 +2033,6 @@ const iconUnlocked = btnLockRatio.querySelector('.icon-unlocked');
 let isRatioLocked = true;
 let lockedAspectRatio = 2400 / 3000;
 
-// Cambio scheda PNG / PDF
 document.querySelectorAll('.format-tab-btn').forEach((tabBtn) => {
   tabBtn.addEventListener('click', () => {
     const format = tabBtn.dataset.format;
@@ -2125,7 +2195,6 @@ let titleAnimState = null;
 function initTitleAnimation() {
   if (titleSegEls.length !== 5 || !titleHeaderEl) return;
 
-  // Resetta eventuali transform per misurare le posizioni base CSS
   titleSegEls.forEach((el) => {
     el.style.transform = 'translateX(0px)';
   });
@@ -2136,13 +2205,11 @@ function initTitleAnimation() {
   titleAnimState = {
     baseLefts,
     widths,
-    // Posizioni correnti interpolate
     currentX: [...baseLefts],
-    // Pesi di spaziatura (gap) tra i 5 blocchi: [prima di A, A-RCH, RCH-T, T-Y, Y-PE, dopo PE]
     gapWeights: [0.02, 0.28, 0.14, 0.24, 0.18, 0.14],
     phaseStartTime: performance.now(),
-    phaseDuration: 11000, // 5.2 secondi per ogni fase di esplorazione lenta
-    activeDriverIdx: 1, // Indice del blocco che guida lo spostamento corrente (0..4)
+    phaseDuration: 11000,
+    activeDriverIdx: 1,
     fromWeights: [0.02, 0.28, 0.14, 0.24, 0.18, 0.14],
     toWeights: [0.02, 0.28, 0.14, 0.24, 0.18, 0.14],
   };
@@ -2157,36 +2224,27 @@ function pickNextTitleExploration(nowMs, isFirst = false) {
   st.fromWeights = [...st.gapWeights];
   st.phaseStartTime = nowMs;
 
-  // Sceglie a turno un blocco diverso (es. RCH, T, Y, PE) che esplora lo spazio
   if (!isFirst) {
     const candidates = [1, 2, 3, 4, 0].filter((idx) => idx !== st.activeDriverIdx);
     st.activeDriverIdx = candidates[Math.floor(Math.random() * candidates.length)];
   }
 
-  // Genera nuovi pesi per gli spazi (gap) attorno al blocco attivo
   const next = [0.02, 0.16, 0.16, 0.16, 0.16, 0.12];
   const driver = st.activeDriverIdx;
-
-  // Il blocco attivo spinge verso sinistra o verso destra comprimendo un lato e aprendo l'altro
   const pushLeft = Math.random() > 0.45;
   const boost = 0.26 + Math.random() * 0.16;
 
   if (driver === 0) {
-    // 'A' si sposta verso destra spingendo la catena, oppure torna al margine sinistro
     next[0] = pushLeft ? 0.01 : 0.18 + Math.random() * 0.12;
     next[1] = pushLeft ? 0.34 : 0.08;
+  } else if (pushLeft) {
+    next[driver] = 0.03 + Math.random() * 0.04;
+    next[driver + 1] = boost;
   } else {
-    // Un blocco interno (RCH, T, Y, PE) esplora a sinistra (comprimendo i blocchi a sinistra) o a destra
-    if (pushLeft) {
-      next[driver] = 0.03 + Math.random() * 0.04; // avvicina al blocco a sinistra
-      next[driver + 1] = boost;                  // apre spazio a destra
-    } else {
-      next[driver] = boost;                      // apre spazio a sinistra
-      next[driver + 1] = 0.03 + Math.random() * 0.04; // spinge verso destra
-    }
+    next[driver] = boost;
+    next[driver + 1] = 0.03 + Math.random() * 0.04;
   }
 
-  // Normalizza i pesi affinché la somma sia 1
   const sum = next.reduce((a, b) => a + b, 0);
   st.toWeights = next.map((w) => w / sum);
 }
@@ -2202,22 +2260,19 @@ function stepTitleAnimation(nowMs) {
     t = 0;
   }
 
-  // Curva sinusoidale morbida e continua (nessuno scatto né pausa brusca)
   const ease = 0.5 - 0.5 * Math.cos(Math.PI * t);
   for (let i = 0; i < st.gapWeights.length; i++) {
     st.gapWeights[i] = st.fromWeights[i] + (st.toWeights[i] - st.fromWeights[i]) * ease;
   }
 
-  // Limiti sicuri dell'header: margine sinistro 26px e margine destro prima del navigatore 3D
   const minLeft = 26;
   const headerRightLimit = titleHeaderEl.clientWidth - 18;
-  const minGapPx = 14; // Distanza minima garantita tra due blocchi per non sovrapporsi mai
+  const minGapPx = 14;
 
   const totalLettersW = st.widths.reduce((a, b) => a + b, 0);
   const totalMinGaps = minGapPx * (st.widths.length - 1);
   const freeSpace = Math.max(0, headerRightLimit - minLeft - totalLettersW - totalMinGaps);
 
-  // Calcola le posizioni target distribuendo lo spazio libero
   const targetX = new Array(st.widths.length);
   let cursor = minLeft + st.gapWeights[0] * freeSpace;
 
@@ -2226,7 +2281,6 @@ function stepTitleAnimation(nowMs) {
     cursor += st.widths[i] + minGapPx + st.gapWeights[i + 1] * freeSpace;
   }
 
-  // Passaggio da destra a sinistra: i blocchi più a destra vincolano e spingono quelli a sinistra
   const maxLastX = headerRightLimit - st.widths[st.widths.length - 1];
   if (targetX[targetX.length - 1] > maxLastX) {
     targetX[targetX.length - 1] = maxLastX;
@@ -2238,7 +2292,6 @@ function stepTitleAnimation(nowMs) {
     }
   }
 
-  // Passaggio di sicurezza da sinistra a destra per non uscire mai dal bordo sinistro (26px)
   if (targetX[0] < minLeft) targetX[0] = minLeft;
   for (let i = 1; i < targetX.length; i++) {
     const minAllowed = targetX[i - 1] + st.widths[i - 1] + minGapPx;
@@ -2247,17 +2300,302 @@ function stepTitleAnimation(nowMs) {
     }
   }
 
-  // Smorzamento continuo frame-by-frame
   for (let i = 0; i < st.widths.length; i++) {
-    st.currentX[i] += (targetX[i] - st.currentX[i]) * 0.035;
+    st.currentX[i] += (targetX[i] - st.currentX[i]) * 0.025;
     const dx = st.currentX[i] - st.baseLefts[i];
     titleSegEls[i].style.transform = `translate3d(${dx.toFixed(2)}px, 0, 0)`;
   }
 }
 
+// --- MODALITÀ PRESENTAZIONE (Ciclo Continuo ~3 Minuti Ottimizzato) ---
+const PRESENTATION_SEQUENCES = [
+  ['FORMA', 'SPAZIO', 'RITMO'],
+  ['ARCHITETTURA'],
+  ['SEGNO', 'MATERIA', 'LUCE', 'VUOTO'],
+  ['STRUTTURA', 'MODULO', 'SISTEMA'],
+  ['TIPOGRAFIA'],
+  ['GRIGLIA', 'ORDINE', 'PESO', 'EQUILIBRIO'],
+  ['TENSIONE', 'VOLUME', 'SINTESI'],
+  ['PROPORZIONE'],
+  ['TRATTO', 'BIANCO', 'NERO', 'COLONNA'],
+];
+
+const presentationState = {
+  active: false,
+  startTime: 0,
+  lastGeometryUpdate: 0,
+  seqIndex: 0,
+  typedWords: [],
+  targetWords: [],
+  currentWordIdx: 0,
+  currentCharIdx: 0,
+  lastTypeTime: 0,
+  phase: 'typing', // 'typing' | 'holding' | 'clearing'
+  holdUntil: 0,
+  sliderFrom: null,
+  sliderTo: null,
+  sliderMorphStart: 0,
+  sliderMorphDuration: 14000,
+  colWaveSeeds: [0.7, 1.3, 2.1, 2.9],
+};
+
+function isPresentationTrigger(rawText) {
+  const compact = rawText
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Z]/g, '');
+  return compact === 'MODALITAPRESENTAZIONE' || compact === 'PRESENTATIONMODE';
+}
+
+function pickRandomPresentationSliders() {
+  return {
+    height: 0.25 + Math.random() * 0.55,
+    width: 0.28 + Math.random() * 0.48,
+    rotation: 0.15 + Math.random() * 0.70,
+    entasi: 0.15 + Math.random() * 0.70,
+    density: 0.18 + Math.random() * 0.30,    // Metà bassa (18% - 48%): sempre fluido
+    thickness: 0.15 + Math.random() * 0.30,  // Metà bassa (15% - 45%): fogli nitidi e leggeri
+    distance: 0.25 + Math.random() * 0.55,
+  };
+}
+
+let presentationFontCycle = 0;
+
+function selectPresentationFontForWordCount(wordCount) {
+  const allOptions = Array.from(
+    fontDropdownMenu.querySelectorAll('.font-option:not(.font-upload-option)')
+  );
+
+  // Filtra i font adatti al numero di parole:
+  // - 4 parole: solo font semplici/leggeri (esclude CONNECT e GROW)
+  // - 1 parola: font complessi/espressivi (CONNECT, GROW o eventuali font custom)
+  // - 3 parole: tutti tranne CONNECT (o tutti i disponibili se ce ne sono pochi)
+  let pool = allOptions.filter((btn) => {
+    const name = btn.textContent.trim().toUpperCase();
+    if (wordCount >= 4) {
+      return name !== 'CONNECT' && name !== 'GROW';
+    }
+    if (wordCount === 1) {
+      return name === 'CONNECT' || name === 'GROW' || btn.dataset.custom !== undefined;
+    }
+    return name !== 'CONNECT';
+  });
+
+  if (pool.length === 0) pool = allOptions;
+
+  const chosenBtn = pool[presentationFontCycle % pool.length];
+  presentationFontCycle++;
+  if (!chosenBtn) return;
+
+  setActiveFontOption(chosenBtn);
+  setFontMenuOpen(false);
+
+  if (chosenBtn.dataset.custom !== undefined) {
+    const idx = parseInt(chosenBtn.dataset.custom, 10);
+    if (customFonts[idx]) setLoadedFont(customFonts[idx].font, customFonts[idx].name);
+  } else if (chosenBtn.dataset.preset !== undefined) {
+    const idx = parseInt(chosenBtn.dataset.preset, 10);
+    const preset = FONT_PRESETS[idx];
+    if (preset) loadFontFromUrl(preset.url, preset.name, FONT_FALLBACK_URL);
+  }
+}
+
+function preparePresentationSequence(seqIdx, nowMs) {
+  const words = PRESENTATION_SEQUENCES[seqIdx % PRESENTATION_SEQUENCES.length];
+  presentationState.seqIndex = seqIdx % PRESENTATION_SEQUENCES.length;
+  presentationState.targetWords = words;
+  presentationState.typedWords = [];
+  presentationState.currentWordIdx = 0;
+  presentationState.currentCharIdx = 0;
+  presentationState.phase = 'typing';
+  presentationState.lastTypeTime = nowMs;
+
+  // Imposta nuovi valori leggeri (metà bassa) per densità e spessore a inizio scena
+  const nextSliders = pickRandomPresentationSliders();
+  state.sliders.density = nextSliders.density;
+  state.sliders.thickness = nextSliders.thickness;
+  if (presentationState.sliderFrom) {
+    presentationState.sliderFrom.density = nextSliders.density;
+    presentationState.sliderFrom.thickness = nextSliders.thickness;
+  }
+  if (presentationState.sliderTo) {
+    presentationState.sliderTo.density = nextSliders.density;
+    presentationState.sliderTo.thickness = nextSliders.thickness;
+  }
+  syncSlidersUI();
+
+  // Sceglie il font in base al numero di parole (anche fin dalla prima sequenza)
+  selectPresentationFontForWordCount(words.length);
+}
+
+function startPresentationMode() {
+  if (presentationState.active) return;
+  const now = performance.now();
+
+  presentationState.active = true;
+  presentationState.startTime = now;
+  presentationState.lastGeometryUpdate = 0;
+  presentationState.sliderFrom = { ...state.sliders };
+  presentationState.sliderTo = pickRandomPresentationSliders();
+  presentationState.sliderMorphStart = now;
+  presentationState.sliderMorphDuration = 14000;
+
+  cameraFocusAnim = null;
+  setFontMenuOpen(false);
+  exportPopover.hidden = true;
+  textInput.blur();
+
+  preparePresentationSequence(0, now);
+  applyPresentationText('');
+}
+
+function stopPresentationMode() {
+  if (!presentationState.active) return;
+  presentationState.active = false;
+
+  const cleaned = formatEpigraphText('SCRIVI\nQUI');
+  textInput.value = cleaned;
+  state.selectedColIdx = state.words.length > 0 ? 0 : null;
+  state.selectedSegmentIdx = null;
+
+  renderColumnSelectorCircles();
+  renderColumnVisualizer();
+  updateResetButtonsVisibility();
+  rebuildScene({ fit: true });
+}
+
+function applyPresentationText(rawStr) {
+  const cleaned = formatEpigraphText(rawStr);
+  textInput.value = cleaned;
+  if (state.words.length > 0) {
+    state.selectedColIdx = Math.min(presentationState.currentWordIdx, state.words.length - 1);
+  }
+  renderColumnSelectorCircles();
+  renderColumnVisualizer();
+  rebuildScene({ fit: true });
+}
+
+function stepPresentationMode(nowMs) {
+  if (!presentationState.active) return;
+  const ps = presentationState;
+
+  // 1. Rotazione lenta e costante intorno all'asse verticale a 60fps (costo zero)
+  const offset = new THREE.Vector3().subVectors(camera.position, controls.target);
+  const sph = new THREE.Spherical().setFromVector3(offset);
+  sph.theta += 0.0009;
+  offset.setFromSpherical(sph);
+  camera.position.copy(controls.target).add(offset);
+  camera.lookAt(controls.target);
+
+  // 2. Morphing continuo degli slider (mantenendo density e thickness fissi per non ricreare geometrie)
+  let morphT = (nowMs - ps.sliderMorphStart) / ps.sliderMorphDuration;
+  if (morphT >= 1) {
+    ps.sliderFrom = { ...state.sliders };
+    ps.sliderTo = pickRandomPresentationSliders();
+    // Mantieni density e thickness stabili durante il morph per evitare riallocazioni RAM
+    ps.sliderTo.density = ps.sliderFrom.density;
+    ps.sliderTo.thickness = ps.sliderFrom.thickness;
+    ps.sliderMorphStart = nowMs;
+    morphT = 0;
+  }
+  const easedMorph = 0.5 - 0.5 * Math.cos(Math.PI * morphT);
+  SLIDER_KEYS.forEach((key) => {
+    state.sliders[key] = ps.sliderFrom[key] + (ps.sliderTo[key] - ps.sliderFrom[key]) * easedMorph;
+  });
+  syncSlidersUI();
+
+  // 3. Animazione continua della larghezza (w) delle lettere (solo matrice GPU, zero RAM)
+  const elapsedSec = (nowMs - ps.startTime) * 0.001;
+  state.words.forEach((wordObj, wIdx) => {
+    const seed = ps.colWaveSeeds[wIdx % ps.colWaveSeeds.length];
+    wordObj.letters.forEach((letter, lIdx) => {
+      letter.w = 1.0 + 0.34 * Math.cos(elapsedSec * 0.45 + seed * 1.4 + lIdx * 0.65);
+    });
+  });
+
+  // Aggiorna la scena 3D (riusa solo la cache senza creare nuove geometrie)
+  rebuildScene({ fit: false });
+
+  // Aggiorna l'SVG 2D solo ogni 80ms per non appesantire il DOM
+  if (nowMs - ps.lastGeometryUpdate >= 80) {
+    ps.lastGeometryUpdate = nowMs;
+    updateResetButtonsVisibility();
+    renderColumnVisualizer();
+  }
+
+  // 4. Scrittura automatica delle parole (ciclo completo di 9 scene = ~3 minuti)
+  if (ps.phase === 'typing') {
+    if (nowMs - ps.lastTypeTime >= 260) {
+      ps.lastTypeTime = nowMs;
+      const targetWord = ps.targetWords[ps.currentWordIdx];
+
+      if (ps.currentCharIdx < targetWord.length) {
+        ps.currentCharIdx++;
+        const partialWord = targetWord.slice(0, ps.currentCharIdx);
+        const lines = [...ps.typedWords, partialWord];
+        applyPresentationText(lines.join('\n'));
+      } else {
+        // Imposta una variazione statica di altezza (h) alla fine della parola
+        const wordObj = state.words[ps.currentWordIdx];
+        if (wordObj) {
+          const seed = ps.colWaveSeeds[ps.currentWordIdx % ps.colWaveSeeds.length];
+          wordObj.letters.forEach((letter, lIdx) => {
+            letter.h = 1.0 + 0.35 * Math.sin(seed + lIdx * 0.85);
+          });
+        }
+
+        ps.typedWords.push(targetWord);
+        ps.currentWordIdx++;
+        ps.currentCharIdx = 0;
+
+        if (ps.currentWordIdx >= ps.targetWords.length) {
+          ps.phase = 'holding';
+          ps.holdUntil = nowMs + 13500;
+        }
+      }
+    }
+  } else if (ps.phase === 'holding') {
+    if (nowMs >= ps.holdUntil) {
+      ps.phase = 'clearing';
+      ps.lastTypeTime = nowMs;
+    }
+  } else if (ps.phase === 'clearing') {
+    if (nowMs - ps.lastTypeTime >= 110) {
+      ps.lastTypeTime = nowMs;
+      const currentStr = textInput.value;
+      if (currentStr.length > 0) {
+        applyPresentationText(currentStr.slice(0, -1));
+      } else {
+        // Svuota la cache prima di passare al font/sequenza successiva
+        clearWordMeshCache();
+        preparePresentationSequence(ps.seqIndex + 1, nowMs);
+      }
+    }
+  }
+}
+window.addEventListener(
+  'pointerdown',
+  (e) => {
+    if (!presentationState.active) return;
+    e.stopPropagation();
+    e.preventDefault();
+    stopPresentationMode();
+  },
+  true
+);
+
+window.addEventListener('keydown', (e) => {
+  if (presentationState.active && e.key === 'Escape') {
+    stopPresentationMode();
+  }
+});
+
+// --- Loop Principale ---
 function animate(nowMs = 0) {
   requestAnimationFrame(animate);
   stepTitleAnimation(nowMs);
+  stepPresentationMode(nowMs);
   stepCameraFocusAnim(nowMs);
   controls.update();
 
@@ -2284,7 +2622,6 @@ initTitleAnimation();
 document.fonts?.ready.then(initTitleAnimation);
 animate();
 
-// Attiva subito la digitazione con il cursore lampeggiante alla fine senza evidenziare in blu
 requestAnimationFrame(() => {
   textInput.focus();
   const len = textInput.value.length;

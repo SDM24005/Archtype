@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ARCHTYPE — 3D Type Columns</title>
-  <link rel="stylesheet" href="style.css?v=5" />
+  <link rel="stylesheet" href="style.css?v=7" />
   <script src="https://cdn.jsdelivr.net/npm/opentype.js@1.3.4/dist/opentype.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
   <script type="importmap">
@@ -23,7 +23,7 @@
       <div class="drop-overlay-box" data-i18n="dropFontHint">RILASCIA QUI IL FILE FONT (.OTF / .TTF / .WOFF)</div>
     </div>
 
-    <!-- Titolo in alto a sinistra formattato come nella reference: A    RCH  T   Y   PE -->
+    <!-- Titolo in alto a sinistra: A    RCH  T   Y   PE -->
     <header id="top-header" aria-label="ARCHTYPE">
       <div id="archtype-title">
         <span class="title-seg seg-a">A</span>
@@ -39,10 +39,8 @@
       <!-- COLONNA 1: Font, Box di Testo, 7 Slider Globali, Resetta Globale -->
       <aside class="panel-col">
         <div class="font-section">
-          <label class="link-btn" id="lbl-upload-font">
-            <span data-i18n="uploadFont">UPLOAD FONT</span>
-            <input id="font-upload" type="file" accept=".ttf,.otf,.woff" hidden />
-          </label>
+          <div class="section-heading" data-i18n="fontLabel">FONT</div>
+          <input id="font-upload" type="file" accept=".ttf,.otf,.woff" hidden />
 
           <!-- Menù selezione font piatto con bordo nero e filetti divisori -->
           <div class="font-dropdown" id="font-dropdown">
@@ -57,19 +55,25 @@
               <button type="button" class="font-option" data-preset="1">WALTER</button>
               <button type="button" class="font-option" data-preset="2">CONNECT</button>
               <button type="button" class="font-option" data-preset="3">GROW</button>
+              <button type="button" class="font-option font-upload-option" id="btn-menu-upload-font" data-i18n="uploadFont">
+                CARICA FONT
+              </button>
             </div>
           </div>
         </div>
 
-        <div class="textbox-section">
-          <textarea
-            id="text-input"
-            rows="4"
-            placeholder="SCRIVI QUI"
-            autocomplete="off"
-            spellcheck="false"
-          >SCRIVI
+        <div class="textbox-group">
+          <div class="section-heading" data-i18n="textLabel">TESTO</div>
+          <div class="textbox-section">
+            <textarea
+              id="text-input"
+              rows="4"
+              placeholder="SCRIVI QUI"
+              autocomplete="off"
+              spellcheck="false"
+            >SCRIVI
 QUI</textarea>
+          </div>
         </div>
 
         <div class="sliders-section" id="global-sliders">
@@ -236,7 +240,9 @@ QUI</textarea>
           ESPORTA
         </button>
       </div>
+    </main>
+  </div>
 
-  <script type="module" src="script.js?v=5"></script>
+  <script type="module" src="script.js?v=7"></script>
 </body>
 </html>
