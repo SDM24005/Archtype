@@ -338,7 +338,7 @@ body.dark-mode .drop-overlay {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 20px 4px 24px 4px;
+  padding: 36px 4px 24px 4px;
 }
 
 .slider-item {
