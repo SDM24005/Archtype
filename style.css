@@ -2,9 +2,7 @@
 
 @font-face {
   font-family: 'ABCGaisyrTrial';
-  src:
-    url('./Font/ABCGaisyrTrial-Book.otf') format('opentype'),
-    url('file:///C:/Users/samue/Documents/Archivio/Scuola/Universit%C3%A0/3o%20anno/1o%20semestre/Progettazione%20Grafica/Esercitazione%201/Tool/Font/ABCGaisyrTrial-Book.otf') format('opentype');
+  src: url('./Font/ABCGaisyrTrial-Book.otf') format('opentype');
   font-weight: 400;
   font-style: normal;
   font-display: swap;
