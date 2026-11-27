@@ -1,55 +1,129 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-const MAX_WORDS = 5;
+const MAX_WORDS = 4;
 const MAX_LETTERS_PER_WORD = 15;
-const MORPH_RING_SAMPLES = 96;
 const FRUSTUM_SIZE = 24;
-const MAX_CACHE_ENTRIES = 40;
-const EQUAL_HEIGHT_UNITS = 5.0;
-const DEFAULT_CAM_DIR = new THREE.Vector3(26, 22, 26).normalize();
+const MAX_CACHE_ENTRIES = 50;
+const DEFAULT_CAM_DIR = new THREE.Vector3(24, 18, 26).normalize();
 
 const FONT_PRESETS = [
-  'https://cdn.jsdelivr.net/npm/@fontsource/inter/files/inter-latin-700-normal.woff',
-  'https://cdn.jsdelivr.net/npm/@fontsource/playfair-display/files/playfair-display-latin-700-normal.woff',
-  'https://cdn.jsdelivr.net/npm/@fontsource/space-mono/files/space-mono-latin-700-normal.woff',
+  { name: 'GAISYR', url: './Font/ABCGaisyrTrial-Book.otf' },
+  { name: 'PLAYFAIR', url: 'https://cdn.jsdelivr.net/npm/@fontsource/playfair-display/files/playfair-display-latin-700-normal.woff' },
+  { name: 'INTER', url: 'https://cdn.jsdelivr.net/npm/@fontsource/inter/files/inter-latin-700-normal.woff' },
+  { name: 'SPACE MONO', url: 'https://cdn.jsdelivr.net/npm/@fontsource/space-mono/files/space-mono-latin-700-normal.woff' },
 ];
 
+const I18N = {
+  it: {
+    uploadFont: 'UPLOAD FONT',
+    placeholder: 'SCRIVI QUI',
+    height: 'ALTEZZA',
+    width: 'LARGHEZZA',
+    rotation: 'TORSIONE',
+    entasi: 'RIGONFIAMENTO',
+    density: 'DENSITÀ',
+    thickness: 'SPESSORE',
+    distance: 'DISTANZA',
+    resetGlobal: 'RESETTA GLOBALE',
+    selectColumn: 'SELEZIONA COLONNA',
+    editColumn: 'MODIFICA COLONNA',
+    resetColumn: 'RESETTA FORMA',
+    night: 'NOTTE',
+    day: 'GIORNO',
+    langSwitch: 'ENG',
+    downloadPng: 'DOWNLOAD PNG',
+    downloadPdf: 'DOWNLOAD PDF',
+    customPngTitle: 'DIMENSIONI PNG (PX)',
+    screen: 'SCHERMO',
+    exportHqPng: 'ESPORTA PNG HQ',
+    navTitle: 'TRASCINA PER RUOTARE • DOPPIO CLICK PER RESET',
+    pdfPhrase: 'FRASE',
+    pdfParams: 'PARAMETRI GLOBALI',
+    pdfColumns: 'MODIFICHE COLONNE',
+    pdfNone: 'NESSUNA MODIFICA SINGOLA',
+  },
+  en: {
+    uploadFont: 'UPLOAD FONT',
+    placeholder: 'TYPE HERE',
+    height: 'HEIGHT',
+    width: 'WIDTH',
+    rotation: 'TORSION',
+    entasi: 'BULGE',
+    density: 'DENSITY',
+    thickness: 'THICKNESS',
+    distance: 'DISTANCE',
+    resetGlobal: 'RESET GLOBAL',
+    selectColumn: 'SELECT COLUMN',
+    editColumn: 'EDIT COLUMN',
+    resetColumn: 'RESET SHAPE',
+    night: 'NIGHT',
+    day: 'DAY',
+    langSwitch: 'ITA',
+    downloadPng: 'DOWNLOAD PNG',
+    downloadPdf: 'DOWNLOAD PDF',
+    customPngTitle: 'PNG DIMENSIONS (PX)',
+    screen: 'SCREEN',
+    exportHqPng: 'EXPORT HQ PNG',
+    navTitle: 'DRAG TO ORBIT • DOUBLE CLICK TO RESET',
+    pdfPhrase: 'PHRASE',
+    pdfParams: 'GLOBAL PARAMETERS',
+    pdfColumns: 'COLUMN OVERRIDES',
+    pdfNone: 'NO INDIVIDUAL OVERRIDES',
+  },
+};
+
+const SLIDER_KEYS = ['height', 'width', 'rotation', 'entasi', 'density', 'thickness', 'distance'];
+const createDefaultSliders = () => Object.fromEntries(SLIDER_KEYS.map((key) => [key, 0.5]));
+
 const state = {
-  text: 'TYPE COLUMN STUDIO',
-  words: [], // [{ text, letters: [{ char, h, w }], dialAngle }]
-  equalHeight: false,
-  globalHeight: false,
-  globalHeightScale: 1.0,
-  globalWidth: false,
-  globalWidthScale: 1.0,
-  entasi: 0.0,
-  globalRotation: false,
-  clusterSpacing: 2.6,
-  columnLayers: 44,
-  sheetThickness: 0.14,
+  lang: 'it',
   darkMode: false,
-  monoMode: false,
+  fontName: 'GAISYR',
+  text: 'COLUMN\nSTUDIO\nTYPE',
+  words: [], // [{ text, letters: [{ char, h, w }] }]
+  selectedColIdx: null,
+  selectedSegmentIdx: null,
+  sliders: createDefaultSliders(),
 };
 
 let currentFont = null;
+const customFonts = [];
 const glyphCache = new Map();
 const wordMeshCache = new Map();
+const columnCircleEls = [];
+let cameraFocusAnim = null; // { startTheta, targetTheta, startTime, duration }
 
-// --- Palette Dinamica UI SVG ---
-function getThemeColors() {
-  const dark = state.darkMode;
-  const mono = state.monoMode;
-  const bg = dark ? '#0c0c0c' : '#ffffff';
-  const fg = dark ? '#f5f5f5' : '#111111';
-  const line = dark ? '#444444' : '#333333';
-  const red = mono ? fg : '#e51919';
-  const blue = mono ? fg : '#2266dd';
-  const orange = mono ? fg : '#e8960c';
-  return { dark, mono, bg, fg, line, red, blue, orange };
+// --- Parametri 3D (Valore Neutro al 50%, Massimi Ridotti per Densità e Spessore) ---
+function getComputedParams() {
+  const s = state.sliders;
+  return {
+    heightScale: 0.3 + s.height * 1.4,            // 0.5 -> 1.00
+    widthScale: 0.35 + s.width * 1.3,             // 0.5 -> 1.00
+    rotationDeg: (s.rotation - 0.5) * 360,        // 0.5 -> 0°
+    entasi: (s.entasi - 0.5) * 1.3,               // 0.5 -> 0.00
+    sheetsPerUnit: 2.0 + s.density * 8.0,         // 0.5 -> 6.0 fogli/unità, max 10.0
+    sheetThickness: 0.015 + s.thickness * 0.21,   // 0.5 -> 0.12, max 0.225
+    clusterSpacing: s.distance * 10.0,            // 0.5 -> 5.0
+  };
 }
 
-// --- Setup Three.js (Viewport Principale Assonometrico) ---
+// --- Traduzione ITA / ENG ---
+function applyLanguage() {
+  const dict = I18N[state.lang];
+  document.documentElement.lang = state.lang;
+
+  document.querySelectorAll('[data-i18n]').forEach((el) => {
+    const key = el.getAttribute('data-i18n');
+    el.textContent = key === 'night' ? (state.darkMode ? dict.day : dict.night) : dict[key];
+  });
+
+  document.getElementById('text-input').placeholder = dict.placeholder;
+  document.getElementById('btn-lang-toggle').textContent = dict.langSwitch;
+  document.getElementById('nav-sphere-wrap').title = dict.navTitle;
+}
+
+// --- Setup Three.js (Viewport Smarginato Full-Bleed) ---
 const viewport = document.getElementById('viewport');
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xffffff);
@@ -73,6 +147,9 @@ viewport.appendChild(renderer.domElement);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.07;
+controls.addEventListener('start', () => {
+  cameraFocusAnim = null;
+});
 
 const rootGroup = new THREE.Group();
 scene.add(rootGroup);
@@ -90,105 +167,80 @@ const strokeMaterial = new THREE.MeshBasicMaterial({
   side: THREE.DoubleSide,
 });
 
-// --- Setup Sfera 3D di Navigazione (in alto a destra) ---
+// --- Setup Navigatore 3D Trasparente (Filetti Sottili & Sfere Ingrandite) ---
 const navCanvas = document.getElementById('nav-sphere-canvas');
 const navRenderer = new THREE.WebGLRenderer({ canvas: navCanvas, antialias: true, alpha: true });
+navRenderer.setClearColor(0x000000, 0);
 navRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-navRenderer.setSize(96, 96);
+navRenderer.setSize(114, 114);
 
 const navScene = new THREE.Scene();
-const navCamera = new THREE.OrthographicCamera(-1.45, 1.45, 1.45, -1.45, 0.1, 20);
+const navCamera = new THREE.OrthographicCamera(-1.32, 1.32, 1.32, -1.32, 0.1, 20);
 navCamera.position.set(0, 0, 5);
 
 const navGizmo = new THREE.Group();
 navScene.add(navGizmo);
 
-const sphereCoreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-const sphereCore = new THREE.Mesh(new THREE.SphereGeometry(0.96, 28, 28), sphereCoreMat);
-navGizmo.add(sphereCore);
+const navHairlineMat = new THREE.LineBasicMaterial({
+  color: 0xffffff,
+  transparent: true,
+  opacity: 0.72,
+});
+const navRingMat = new THREE.MeshBasicMaterial({
+  color: 0xffffff,
+  side: THREE.DoubleSide,
+  transparent: true,
+  opacity: 0.78,
+});
+navScene.add(new THREE.Mesh(new THREE.RingGeometry(0.982, 0.993, 96), navRingMat));
 
-const outlineRingMat = new THREE.MeshBasicMaterial({ color: 0x111111, side: THREE.DoubleSide });
-const outlineRing = new THREE.Mesh(new THREE.RingGeometry(0.96, 1.0, 48), outlineRingMat);
-navScene.add(outlineRing);
-
-const navLinesMat = new THREE.LineBasicMaterial({ color: 0x222222 });
-
-function makeCircleLine(axis, radius = 0.98) {
+function makeCircleLine(axis, radius = 0.986) {
   const pts = [];
-  for (let i = 0; i <= 64; i++) {
-    const a = (i / 64) * Math.PI * 2;
+  for (let i = 0; i <= 96; i++) {
+    const a = (i / 96) * Math.PI * 2;
     if (axis === 'xz') pts.push(new THREE.Vector3(Math.cos(a) * radius, 0, Math.sin(a) * radius));
     if (axis === 'xy') pts.push(new THREE.Vector3(Math.cos(a) * radius, Math.sin(a) * radius, 0));
     if (axis === 'yz') pts.push(new THREE.Vector3(0, Math.cos(a) * radius, Math.sin(a) * radius));
   }
-  const geo = new THREE.BufferGeometry().setFromPoints(pts);
-  return new THREE.Line(geo, navLinesMat);
+  return new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), navHairlineMat);
 }
 
-navGizmo.add(makeCircleLine('xz'));
-navGizmo.add(makeCircleLine('xy'));
-navGizmo.add(makeCircleLine('yz'));
+navGizmo.add(makeCircleLine('xz'), makeCircleLine('xy'), makeCircleLine('yz'));
 
 const axesLinesGeo = new THREE.BufferGeometry().setFromPoints([
-  new THREE.Vector3(-1.12, 0, 0), new THREE.Vector3(1.12, 0, 0),
-  new THREE.Vector3(0, -1.12, 0), new THREE.Vector3(0, 1.12, 0),
-  new THREE.Vector3(0, 0, -1.12), new THREE.Vector3(0, 0, 1.12),
+  new THREE.Vector3(-0.98, 0, 0), new THREE.Vector3(0.98, 0, 0),
+  new THREE.Vector3(0, -0.98, 0), new THREE.Vector3(0, 0.98, 0),
+  new THREE.Vector3(0, 0, -0.98), new THREE.Vector3(0, 0, 0.98),
 ]);
-navGizmo.add(new THREE.LineSegments(axesLinesGeo, navLinesMat));
+navGizmo.add(new THREE.LineSegments(axesLinesGeo, navHairlineMat));
 
-const axisSprites = [];
-function drawAxisTexture(canvas, label, isDark) {
-  const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, 48, 48);
-  ctx.fillStyle = isDark ? '#f5f5f5' : '#111111';
-  ctx.beginPath();
-  ctx.arc(24, 24, 18, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = isDark ? '#0c0c0c' : '#ffffff';
-  ctx.font = 'bold 22px Inter, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(label, 24, 25);
-}
-
-function makeAxisDot(pos, label) {
-  const c = document.createElement('canvas');
-  c.width = 48;
-  c.height = 48;
-  drawAxisTexture(c, label, false);
-
-  const tex = new THREE.CanvasTexture(c);
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex }));
-  sprite.position.copy(pos);
-  sprite.scale.set(0.36, 0.36, 1);
-  axisSprites.push({ canvas: c, tex, label });
-  return sprite;
-}
-
-navGizmo.add(makeAxisDot(new THREE.Vector3(1.06, 0, 0), 'X'));
-navGizmo.add(makeAxisDot(new THREE.Vector3(0, 1.06, 0), 'Y'));
-navGizmo.add(makeAxisDot(new THREE.Vector3(0, 0, 1.06), 'Z'));
+const axisDotMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+const dotGeo = new THREE.SphereGeometry(0.115, 20, 20);
+[
+  [0.985, 0, 0], [-0.985, 0, 0],
+  [0, 0.985, 0], [0, -0.985, 0],
+  [0, 0, 0.985], [0, 0, -0.985],
+].forEach(([x, y, z]) => {
+  const m = new THREE.Mesh(dotGeo, axisDotMat);
+  m.position.set(x, y, z);
+  navGizmo.add(m);
+});
 
 function syncThemeTo3D() {
   const dark = state.darkMode;
-  scene.background.set(dark ? 0x0c0c0c : 0xffffff);
-  fillMaterial.color.set(dark ? 0x0c0c0c : 0xffffff);
-  strokeMaterial.color.set(dark ? 0xffffff : 0x000000);
+  const bgHex = dark ? 0x000000 : 0xffffff;
+  const fgHex = dark ? 0xffffff : 0x000000;
 
-  sphereCoreMat.color.set(dark ? 0x0c0c0c : 0xffffff);
-  outlineRingMat.color.set(dark ? 0xf5f5f5 : 0x111111);
-  navLinesMat.color.set(dark ? 0xdddddd : 0x222222);
-
-  for (const item of axisSprites) {
-    drawAxisTexture(item.canvas, item.label, dark);
-    item.tex.needsUpdate = true;
-  }
+  scene.background.set(bgHex);
+  fillMaterial.color.set(bgHex);
+  strokeMaterial.color.set(fgHex);
 }
 
 const navWrap = document.getElementById('nav-sphere-wrap');
 navWrap.style.touchAction = 'none';
 navWrap.addEventListener('pointerdown', (e) => {
   e.preventDefault();
+  cameraFocusAnim = null;
   let prevX = e.clientX;
   let prevY = e.clientY;
 
@@ -219,66 +271,115 @@ navWrap.addEventListener('pointerdown', (e) => {
   window.addEventListener('pointercancel', onUp);
 });
 
-navWrap.addEventListener('dblclick', () => fitCameraToScene(true));
+navWrap.addEventListener('dblclick', () => {
+  cameraFocusAnim = null;
+  fitCameraToScene(true);
+});
 
-// --- Sincronizzazione Testo -> Struttura Dati Parole/Lettere ---
-const clusterCtrl = document.getElementById('cluster-dist-control');
-const bottomBar = document.getElementById('bottom-bar');
+// --- Rotazione Fluida della Camera per Portare la Colonna Selezionata di Fronte ---
+function focusCameraOnColumn(wIdx) {
+  const n = state.words.length;
+  if (n === 0 || wIdx === null || wIdx < 0 || wIdx >= n) return;
 
-function updateClusterVisibility() {
-  const singleWord = state.words.length <= 1;
-  clusterCtrl.hidden = singleWord;
-  bottomBar.classList.toggle('two-cols', singleWord);
+  const colTheta = n === 1 ? Math.PI * 0.5 : Math.PI * 0.5 + (wIdx / n) * Math.PI * 2;
+  const desiredSphTheta = Math.atan2(Math.cos(colTheta), Math.sin(colTheta));
+
+  const offset = new THREE.Vector3().subVectors(camera.position, controls.target);
+  const sph = new THREE.Spherical().setFromVector3(offset);
+
+  let delta = desiredSphTheta - sph.theta;
+  while (delta > Math.PI) delta -= Math.PI * 2;
+  while (delta < -Math.PI) delta += Math.PI * 2;
+
+  cameraFocusAnim = {
+    startTheta: sph.theta,
+    targetTheta: sph.theta + delta,
+    startTime: performance.now(),
+    duration: 360,
+  };
 }
 
-function sanitizeAndSyncWords(rawText) {
-  const rawWords = rawText.split(/\s+/);
-  const filteredWords = [];
-  const rebuiltTokens = [];
+function stepCameraFocusAnim(nowMs) {
+  if (!cameraFocusAnim) return;
+  const elapsed = nowMs - cameraFocusAnim.startTime;
+  const t = THREE.MathUtils.clamp(elapsed / cameraFocusAnim.duration, 0, 1);
+  const eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
-  for (let i = 0; i < rawWords.length; i++) {
-    const w = rawWords[i];
-    if (w.length === 0) {
-      if (i === rawWords.length - 1 && filteredWords.length < MAX_WORDS && rawText.endsWith(' ')) {
-        rebuiltTokens.push('');
+  const offset = new THREE.Vector3().subVectors(camera.position, controls.target);
+  const sph = new THREE.Spherical().setFromVector3(offset);
+  sph.theta = cameraFocusAnim.startTheta + (cameraFocusAnim.targetTheta - cameraFocusAnim.startTheta) * eased;
+  offset.setFromSpherical(sph);
+  camera.position.copy(controls.target).add(offset);
+  camera.lookAt(controls.target);
+
+  if (t >= 1) cameraFocusAnim = null;
+}
+
+// --- Formattazione Testo in Epigrafe (Max 4 Parole, Solo Maiuscolo, No Doppio A Capo) ---
+const distanceSliderItem = document.getElementById('slider-distance-item');
+
+function updateDistanceSliderVisibility() {
+  distanceSliderItem.hidden = state.words.length <= 1;
+}
+
+function formatEpigraphText(rawText) {
+  const normalized = rawText
+    .toUpperCase()
+    .replace(/[ \t\r]+/g, '\n')
+    .replace(/\n{2,}/g, '\n')
+    .replace(/^\n+/, '');
+
+  const rawLines = normalized.split('\n');
+  const lines = [];
+  const validWords = [];
+
+  for (let i = 0; i < rawLines.length; i++) {
+    const token = rawLines[i];
+    if (token.length === 0) {
+      if (i === rawLines.length - 1 && validWords.length > 0 && validWords.length < MAX_WORDS) {
+        lines.push('');
       }
       continue;
     }
-    if (filteredWords.length >= MAX_WORDS) break;
-    const clipped = Array.from(w).slice(0, MAX_LETTERS_PER_WORD).join('');
-    filteredWords.push(clipped);
-    rebuiltTokens.push(clipped);
+    if (validWords.length >= MAX_WORDS) break;
+    const clipped = Array.from(token).slice(0, MAX_LETTERS_PER_WORD).join('');
+    validWords.push(clipped);
+    lines.push(clipped);
   }
 
-  const sanitized = rebuiltTokens.join(' ');
-  state.text = sanitized;
+  state.text = lines.join('\n');
 
   const prevWords = state.words;
-  state.words = filteredWords.map((wordStr, wIdx) => {
+  state.words = validWords.map((wordStr, wIdx) => {
     const prevWord = prevWords[wIdx];
-    const chars = Array.from(wordStr);
-    const letters = chars.map((ch, lIdx) => {
-      const prevLetter = prevWord && prevWord.letters[lIdx];
+    const letters = Array.from(wordStr).map((ch, lIdx) => {
+      const prevLetter = prevWord?.letters[lIdx];
       return {
         char: ch,
         h: prevLetter ? prevLetter.h : 1.0,
         w: prevLetter ? prevLetter.w : 1.0,
       };
     });
-    return {
-      text: wordStr,
-      letters,
-      dialAngle: prevWord ? prevWord.dialAngle : 0,
-    };
+    return { text: wordStr, letters };
   });
 
-  document.getElementById('text-counter').textContent = `${state.words.length}/${MAX_WORDS} parole`;
-  updateClusterVisibility();
-  return sanitized;
+  if (state.selectedColIdx !== null && state.selectedColIdx >= state.words.length) {
+    state.selectedColIdx = null;
+    state.selectedSegmentIdx = null;
+  } else if (
+    state.selectedColIdx !== null &&
+    state.selectedSegmentIdx !== null &&
+    state.selectedSegmentIdx >= state.words[state.selectedColIdx].letters.length
+  ) {
+    state.selectedSegmentIdx = null;
+  }
+
+  updateDistanceSliderVisibility();
+  return state.text;
 }
 
 // --- Centratura & Margine Automatico Viewport 3D ---
-function fitCameraToScene(resetAngle = false) {
+function fitCameraToScene(resetAngle = false, customAspect = null) {
   const box = new THREE.Box3().setFromObject(rootGroup);
   if (box.isEmpty()) return;
 
@@ -319,12 +420,13 @@ function fitCameraToScene(resetAngle = false) {
 
   const viewW = Math.max(maxX - minX, 0.1);
   const viewH = Math.max(maxY - minY, 0.1);
-  const aspect = viewport.clientWidth / Math.max(viewport.clientHeight, 1);
+  const aspect = customAspect ?? (viewport.clientWidth / Math.max(viewport.clientHeight, 1));
   const marginFill = 0.74;
 
-  const zoomX = (FRUSTUM_SIZE * aspect * marginFill) / viewW;
-  const zoomY = (FRUSTUM_SIZE * marginFill) / viewH;
-  camera.zoom = Math.min(zoomX, zoomY);
+  camera.zoom = Math.min(
+    (FRUSTUM_SIZE * aspect * marginFill) / viewW,
+    (FRUSTUM_SIZE * marginFill) / viewH
+  );
   camera.updateProjectionMatrix();
   controls.update();
 }
@@ -415,7 +517,7 @@ function buildSheetBodyGeometry(shapes, thickness, curveSegments = 8) {
   return geo;
 }
 
-function buildDualStrokeGeometry(shapes, width, thickness) {
+function buildDualStrokeGeometry(shapes, width, thickness, curveDiv = 10) {
   if (width <= 0.0005 || shapes.length === 0) return new THREE.BufferGeometry();
 
   const positions = [];
@@ -425,8 +527,8 @@ function buildDualStrokeGeometry(shapes, width, thickness) {
 
   const contours = [];
   for (const shape of shapes) {
-    contours.push(shape.getPoints(10));
-    for (const hole of shape.holes) contours.push(hole.getPoints(10));
+    contours.push(shape.getPoints(curveDiv));
+    for (const hole of shape.holes) contours.push(hole.getPoints(curveDiv));
   }
 
   const zPlanes = [thickness * 0.5 + 0.001, -thickness * 0.5 - 0.001];
@@ -487,9 +589,7 @@ function resampleClosedContour(curvePath, center, sampleCount) {
   }));
   if (pts.length < sampleCount) return null;
 
-  if (THREE.ShapeUtils.area(pts.map((p) => new THREE.Vector2(p.x, p.y))) < 0) {
-    pts.reverse();
-  }
+  if (THREE.ShapeUtils.area(pts.map((p) => new THREE.Vector2(p.x, p.y))) < 0) pts.reverse();
 
   let topIdx = 0;
   for (let i = 1; i < pts.length; i++) {
@@ -500,20 +600,20 @@ function resampleClosedContour(curvePath, center, sampleCount) {
   return [...pts.slice(topIdx), ...pts.slice(0, topIdx)];
 }
 
-function getGlyphData(char) {
-  if (glyphCache.has(char)) return glyphCache.get(char);
+function getGlyphData(char, ringSamples = 96) {
+  const key = `${char}#${ringSamples}`;
+  if (glyphCache.has(key)) return glyphCache.get(key);
 
-  const fontSize = 5.0;
   const glyph = currentFont.charToGlyph(char);
-  const shapes = opentypePathToShapes(glyph.getPath(0, 0, fontSize));
+  const shapes = opentypePathToShapes(glyph.getPath(0, 0, 5.0));
 
   if (shapes.length === 0) {
     const empty = { char, shapes: [], center: new THREE.Vector2(), morphSolids: [], morphHoles: [] };
-    glyphCache.set(char, empty);
+    glyphCache.set(key, empty);
     return empty;
   }
 
-  const measureGeo = new THREE.ShapeGeometry(shapes, 8);
+  const measureGeo = new THREE.ShapeGeometry(shapes, 12);
   measureGeo.computeBoundingBox();
   const center = new THREE.Vector2();
   measureGeo.boundingBox.getCenter(center);
@@ -522,26 +622,24 @@ function getGlyphData(char) {
   const morphSolids = [];
   const morphHoles = [];
   for (const s of shapes) {
-    const sampledSolid = resampleClosedContour(s, center, MORPH_RING_SAMPLES);
+    const sampledSolid = resampleClosedContour(s, center, ringSamples);
     if (sampledSolid) morphSolids.push(sampledSolid);
     for (const h of s.holes) {
-      const sampledHole = resampleClosedContour(h, center, MORPH_RING_SAMPLES);
+      const sampledHole = resampleClosedContour(h, center, ringSamples);
       if (sampledHole) morphHoles.push(sampledHole);
     }
   }
 
   const data = { char, shapes, center, morphSolids, morphHoles };
-  glyphCache.set(char, data);
+  glyphCache.set(key, data);
   return data;
 }
 
-function makeCollapsedRing(cx, cy, radius = 0.002) {
-  const ring = [];
-  for (let i = 0; i < MORPH_RING_SAMPLES; i++) {
-    const a = (i / MORPH_RING_SAMPLES) * Math.PI * 2;
-    ring.push({ x: cx + Math.cos(a) * radius, y: cy + Math.sin(a) * radius });
-  }
-  return ring;
+function makeCollapsedRing(cx, cy, ringSamples, radius = 0.002) {
+  return Array.from({ length: ringSamples }, (_, i) => {
+    const a = (i / ringSamples) * Math.PI * 2;
+    return { x: cx + Math.cos(a) * radius, y: cy + Math.sin(a) * radius };
+  });
 }
 
 function getContourCentroid(ring) {
@@ -569,7 +667,7 @@ function disposeSlices(slices) {
 }
 
 function clearWordMeshCache() {
-  wordMeshCache.forEach((slices) => disposeSlices(slices));
+  wordMeshCache.forEach(disposeSlices);
   wordMeshCache.clear();
 }
 
@@ -582,18 +680,22 @@ function setWordMeshCache(key, slices) {
   wordMeshCache.set(key, slices);
 }
 
-function getWordSlices(validLetters, layers, totalHeightWeight) {
+function getWordSlices(validLetters, layers, totalHeightWeight, sheetThickness, highQuality = false) {
+  const ringSamples = highQuality ? 192 : 96;
+  const curveSeg = highQuality ? 18 : 8;
+  const strokeDiv = highQuality ? 18 : 10;
+
   const wordKey = validLetters.map((l) => `${l.glyph.char}:${(l.h / totalHeightWeight).toFixed(3)}`).join('|');
-  const cacheKey = `${wordKey}#${layers}#${state.sheetThickness.toFixed(3)}`;
+  const cacheKey = `${wordKey}#${layers}#${sheetThickness.toFixed(3)}#${highQuality ? 'HQ' : 'SD'}`;
   if (wordMeshCache.has(cacheKey)) return wordMeshCache.get(cacheKey);
 
   const strokeW = 0.075;
 
   if (validLetters.length === 1) {
     const g = validLetters[0].glyph;
-    const bodyGeo = buildSheetBodyGeometry(g.shapes, state.sheetThickness, 8);
+    const bodyGeo = buildSheetBodyGeometry(g.shapes, sheetThickness, curveSeg);
     bodyGeo.translate(-g.center.x, -g.center.y, 0);
-    const strokeGeo = buildDualStrokeGeometry(g.shapes, strokeW, state.sheetThickness);
+    const strokeGeo = buildDualStrokeGeometry(g.shapes, strokeW, sheetThickness, strokeDiv);
     strokeGeo.translate(-g.center.x, -g.center.y, 0);
     const shared = { bodyGeo, strokeGeo };
     const slices = Array.from({ length: layers }, () => shared);
@@ -606,20 +708,15 @@ function getWordSlices(validLetters, layers, totalHeightWeight) {
 
   const normalized = validLetters.map((l) => {
     const g = l.glyph;
-    const solids = [];
-    for (let s = 0; s < maxSolids; s++) {
-      solids.push(g.morphSolids[s] || makeCollapsedRing(0, 0, 0.003));
-    }
-    const holes = [];
-    for (let h = 0; h < maxHoles; h++) {
-      if (g.morphHoles[h]) {
-        holes.push(g.morphHoles[h]);
-      } else {
-        const refHole = validLetters.find((other) => other.glyph.morphHoles[h])?.glyph.morphHoles[h];
-        const c = refHole ? getContourCentroid(refHole) : { x: 0, y: 0 };
-        holes.push(makeCollapsedRing(c.x, c.y, 0.002));
-      }
-    }
+    const solids = Array.from({ length: maxSolids }, (_, s) =>
+      g.morphSolids[s] || makeCollapsedRing(0, 0, ringSamples, 0.003)
+    );
+    const holes = Array.from({ length: maxHoles }, (_, h) => {
+      if (g.morphHoles[h]) return g.morphHoles[h];
+      const refHole = validLetters.find((other) => other.glyph.morphHoles[h])?.glyph.morphHoles[h];
+      const c = refHole ? getContourCentroid(refHole) : { x: 0, y: 0 };
+      return makeCollapsedRing(c.x, c.y, ringSamples, 0.002);
+    });
     return { solids, holes };
   });
 
@@ -635,10 +732,7 @@ function getWordSlices(validLetters, layers, totalHeightWeight) {
     const t = layers > 1 ? i / (layers - 1) : 1;
     const topDown = 1 - t;
 
-    let idx0 = 0;
-    let idx1 = 0;
-    let alpha = 0;
-
+    let idx0 = 0, idx1 = 0, alpha = 0;
     if (topDown <= centers[0]) {
       idx0 = idx1 = 0;
     } else if (topDown >= centers[centers.length - 1]) {
@@ -648,8 +742,7 @@ function getWordSlices(validLetters, layers, totalHeightWeight) {
         if (topDown >= centers[k] && topDown <= centers[k + 1]) {
           idx0 = k;
           idx1 = k + 1;
-          const span = Math.max(centers[k + 1] - centers[k], 1e-5);
-          const rawA = (topDown - centers[k]) / span;
+          const rawA = (topDown - centers[k]) / Math.max(centers[k + 1] - centers[k], 1e-5);
           alpha = rawA * rawA * (3 - 2 * rawA);
           break;
         }
@@ -664,7 +757,7 @@ function getWordSlices(validLetters, layers, totalHeightWeight) {
       const r0 = g0.solids[s];
       const r1 = g1.solids[s];
       const pts = [];
-      for (let k = 0; k < MORPH_RING_SAMPLES; k++) {
+      for (let k = 0; k < ringSamples; k++) {
         pts.push(
           new THREE.Vector2(
             r0[k].x + (r1[k].x - r0[k].x) * alpha,
@@ -681,7 +774,7 @@ function getWordSlices(validLetters, layers, totalHeightWeight) {
             const h0 = g0.holes[h];
             const h1 = g1.holes[h];
             const hPts = [];
-            for (let k = 0; k < MORPH_RING_SAMPLES; k++) {
+            for (let k = 0; k < ringSamples; k++) {
               hPts.push(
                 new THREE.Vector2(
                   h0[k].x + (h1[k].x - h0[k].x) * alpha,
@@ -700,9 +793,10 @@ function getWordSlices(validLetters, layers, totalHeightWeight) {
       }
     }
 
-    const bodyGeo = shapes.length > 0 ? buildSheetBodyGeometry(shapes, state.sheetThickness, 1) : null;
-    const strokeGeo = shapes.length > 0 ? buildDualStrokeGeometry(shapes, strokeW, state.sheetThickness) : null;
-    slices.push({ bodyGeo, strokeGeo });
+    slices.push({
+      bodyGeo: shapes.length > 0 ? buildSheetBodyGeometry(shapes, sheetThickness, 1) : null,
+      strokeGeo: shapes.length > 0 ? buildDualStrokeGeometry(shapes, strokeW, sheetThickness, 1) : null,
+    });
   }
 
   setWordMeshCache(cacheKey, slices);
@@ -724,8 +818,7 @@ function sampleLetterWidthAt(validLetters, totalHeightWeight, topDown) {
 
   for (let k = 0; k < centers.length - 1; k++) {
     if (topDown >= centers[k] && topDown <= centers[k + 1]) {
-      const span = Math.max(centers[k + 1] - centers[k], 1e-5);
-      const rawA = (topDown - centers[k]) / span;
+      const rawA = (topDown - centers[k]) / Math.max(centers[k + 1] - centers[k], 1e-5);
       const alpha = rawA * rawA * (3 - 2 * rawA);
       return validLetters[k].w + (validLetters[k + 1].w - validLetters[k].w) * alpha;
     }
@@ -733,37 +826,35 @@ function sampleLetterWidthAt(validLetters, totalHeightWeight, topDown) {
   return 1.0;
 }
 
-// --- Costruzione della Scena 3D ---
-function rebuildScene(resetAngle = false) {
+// --- Costruzione Scena 3D ---
+function rebuildScene({ resetAngle = false, fit = false, highQuality = false } = {}) {
   while (rootGroup.children.length > 0) {
     rootGroup.remove(rootGroup.children[0]);
   }
   if (!currentFont) return;
 
+  const ringSamples = highQuality ? 192 : 96;
   const activeColumns = state.words
-    .map((wordObj) => {
-      const validLetters = wordObj.letters
-        .map((l) => ({ ...l, glyph: getGlyphData(l.char) }))
-        .filter((l) => l.glyph.shapes.length > 0);
-      return { wordObj, validLetters };
-    })
+    .map((wordObj) => ({
+      wordObj,
+      validLetters: wordObj.letters
+        .map((l) => ({ ...l, glyph: getGlyphData(l.char, ringSamples) }))
+        .filter((l) => l.glyph.shapes.length > 0),
+    }))
     .filter((item) => item.validLetters.length > 0);
 
   const n = activeColumns.length;
   if (n === 0) return;
 
-  const layers = Math.max(12, Math.round(state.columnLayers));
-  const unitHeight = 1.35 * (state.globalHeight ? state.globalHeightScale : 1.0);
-  const baseScale = 0.78 * (state.globalWidth ? state.globalWidthScale : 1.0);
-  const entasiFactor = state.globalWidth ? state.entasi : 0.0;
+  const p = getComputedParams();
+  const unitHeight = 1.35 * p.heightScale;
+  const baseScale = 0.78 * p.widthScale;
+  const twistRad = THREE.MathUtils.degToRad(p.rotationDeg);
 
-  const maxWidthWeight = Math.max(
-    1.0,
-    ...activeColumns.flatMap((c) => c.validLetters.map((l) => l.w))
-  );
-  const maxEntasi = 1.0 + Math.max(0, entasiFactor);
+  const maxWidthWeight = Math.max(1.0, ...activeColumns.flatMap((c) => c.validLetters.map((l) => l.w)));
+  const maxEntasi = 1.0 + Math.max(0, p.entasi);
   const colFootprint = 2.4 * baseScale * maxWidthWeight * maxEntasi;
-  const chord = colFootprint * 2 + state.clusterSpacing;
+  const chord = colFootprint * 2 + p.clusterSpacing;
   const ringRadius = n === 1 ? 0 : chord / (2 * Math.sin(Math.PI / n));
 
   const bodyMat = [fillMaterial, strokeMaterial];
@@ -776,23 +867,21 @@ function rebuildScene(resetAngle = false) {
     const baseYaw = n === 1 ? 0 : Math.PI * 0.5 - theta;
 
     const totalHWeight = col.validLetters.reduce((sum, l) => sum + l.h, 0);
-    // Se equalHeight è attivo, tutte le colonne hanno la stessa altezza totale indipendentemente dal numero di lettere
-    const effectiveUnits = state.equalHeight ? EQUAL_HEIGHT_UNITS : totalHWeight;
-    const colHeight = effectiveUnits * unitHeight;
-    const twistRad = THREE.MathUtils.degToRad(col.wordObj.dialAngle);
+    const colHeight = totalHWeight * unitHeight;
 
-    const slices = getWordSlices(col.validLetters, layers, totalHWeight);
+    const colLayers = THREE.MathUtils.clamp(Math.round(colHeight * p.sheetsPerUnit) + 1, 3, 120);
+    const slices = getWordSlices(col.validLetters, colLayers, totalHWeight, p.sheetThickness, highQuality);
 
-    for (let i = 0; i < layers; i++) {
+    for (let i = 0; i < colLayers; i++) {
       const slice = slices[i];
       if (!slice || (!slice.bodyGeo && !slice.strokeGeo)) continue;
 
-      const t = layers > 1 ? i / (layers - 1) : 1;
+      const t = colLayers > 1 ? i / (colLayers - 1) : 1;
       const topDown = 1 - t;
-      const y = t * colHeight + state.sheetThickness * 0.5 + 0.002;
+      const y = t * colHeight + p.sheetThickness * 0.5 + 0.002;
 
       const wWeight = sampleLetterWidthAt(col.validLetters, totalHWeight, topDown);
-      const entasiMul = 1.0 + entasiFactor * Math.sin(Math.PI * t);
+      const entasiMul = 1.0 + p.entasi * Math.sin(Math.PI * t);
       const scaleXZ = Math.max(0.05, baseScale * wWeight * entasiMul);
 
       dummy.position.set(cx, y, cz);
@@ -805,7 +894,6 @@ function rebuildScene(resetAngle = false) {
         bodyMesh.applyMatrix4(dummy.matrix);
         rootGroup.add(bodyMesh);
       }
-
       if (slice.strokeGeo) {
         const strokeMesh = new THREE.Mesh(slice.strokeGeo, strokeMaterial);
         strokeMesh.applyMatrix4(dummy.matrix);
@@ -814,225 +902,536 @@ function rebuildScene(resetAngle = false) {
     }
   });
 
-  fitCameraToScene(resetAngle);
+  if (fit) {
+    fitCameraToScene(resetAngle);
+  }
 }
 
-// --- Rendering UI 2D: Colonne Interattive ---
-const columnsWrap = document.getElementById('columns-canvas-wrap');
-const columnsSvg = document.getElementById('columns-svg');
-const dialsSvg = document.getElementById('dials-svg');
+// --- Render Alta Qualità Presenvando Angolazione e Zoom Correnti della Viewport ---
+function renderHighQualityDataURL(targetW, targetH, autoFitForSheet = false) {
+  const maxTexSize = renderer.capabilities.maxTextureSize || 4096;
+  const safeW = THREE.MathUtils.clamp(Math.round(targetW), 200, Math.min(6000, maxTexSize));
+  const safeH = THREE.MathUtils.clamp(Math.round(targetH), 200, Math.min(6000, maxTexSize));
+  const exportAspect = safeW / safeH;
 
-columnsSvg.style.touchAction = 'none';
-dialsSvg.style.touchAction = 'none';
+  const prevW = viewport.clientWidth;
+  const prevH = Math.max(viewport.clientHeight, 1);
+  const prevPixelRatio = renderer.getPixelRatio();
+  const prevZoom = camera.zoom;
+  const prevPos = camera.position.clone();
+  const prevTarget = controls.target.clone();
 
-function getColumnLayoutMetrics() {
-  const n = Math.max(1, state.words.length);
-  const availW = Math.max(340, columnsWrap.clientWidth - 20);
-  const slotW = availW / n;
-  const baseBarW = Math.min(44, Math.max(22, slotW * 0.34));
-  const unitPx = 28 * (state.globalHeight ? state.globalHeightScale : 1.0);
-  return { n, availW, slotW, baseBarW, unitPx };
+  // Ricostruisce con suddivisione curve ad alta precisione senza resettare angolo o zoom
+  rebuildScene({ resetAngle: false, fit: false, highQuality: true });
+
+  if (autoFitForSheet) {
+    fitCameraToScene(false, exportAspect);
+  }
+
+  camera.left = (-FRUSTUM_SIZE * exportAspect) / 2;
+  camera.right = (FRUSTUM_SIZE * exportAspect) / 2;
+  camera.top = FRUSTUM_SIZE / 2;
+  camera.bottom = -FRUSTUM_SIZE / 2;
+  camera.updateProjectionMatrix();
+
+  renderer.setPixelRatio(1);
+  renderer.setSize(safeW, safeH, false);
+  renderer.render(scene, camera);
+
+  const dataURL = renderer.domElement.toDataURL('image/png');
+
+  // Ripristina esattamente lo stato interattivo della viewport
+  const restoreAspect = prevW / prevH;
+  camera.left = (-FRUSTUM_SIZE * restoreAspect) / 2;
+  camera.right = (FRUSTUM_SIZE * restoreAspect) / 2;
+  camera.top = FRUSTUM_SIZE / 2;
+  camera.bottom = -FRUSTUM_SIZE / 2;
+  camera.zoom = prevZoom;
+  camera.position.copy(prevPos);
+  controls.target.copy(prevTarget);
+  camera.updateProjectionMatrix();
+  controls.update();
+
+  renderer.setPixelRatio(prevPixelRatio);
+  renderer.setSize(prevW, prevH, false);
+  rebuildScene({ resetAngle: false, fit: false, highQuality: false });
+  renderer.render(scene, camera);
+
+  return dataURL;
 }
 
-function renderColumnsUI() {
-  columnsSvg.innerHTML = '';
-  const { availW, slotW, baseBarW, unitPx } = getColumnLayoutMetrics();
-  if (state.words.length === 0) return;
+// --- Disegno Testo Vettoriale su PDF usando il Font Attivo ---
+function drawFontTextOnPDF(doc, text, x, y, fontSizePt, align = 'left') {
+  if (!currentFont || !text) {
+    doc.text(text, x, y, { align });
+    return;
+  }
 
-  const theme = getThemeColors();
-  const topMargin = 16;
-  const bottomMargin = 18;
-  let maxColPx = 120;
+  const sizeMm = fontSizePt * 0.352778;
+  const totalWidth = currentFont.getAdvanceWidth(text, sizeMm);
+  let drawX = x;
+  if (align === 'center') drawX = x - totalWidth * 0.5;
+  else if (align === 'right') drawX = x - totalWidth;
 
-  const globalWScale = state.globalWidth ? state.globalWidthScale : 1.0;
-  const entasiVal = state.globalWidth ? state.entasi : 0.0;
+  const path = currentFont.getPath(text, drawX, y, sizeMm);
+  let cx = 0;
+  let cy = 0;
+  let hasSegments = false;
 
-  state.words.forEach((wordObj, wIdx) => {
-    const centerX = slotW * (wIdx + 0.5) + 8;
-    const totalH = wordObj.letters.reduce((s, l) => s + l.h, 0);
-    // Se equalHeight è attivo, tutte le colonne hanno la stessa altezza grafica
-    const effectiveUnits = state.equalHeight ? EQUAL_HEIGHT_UNITS : totalH;
-    const colHeightPx = effectiveUnits * unitPx;
-    const heightScalePerLetter = totalH > 0 ? effectiveUnits / totalH : 1;
-
-    if (colHeightPx > maxColPx) maxColPx = colHeightPx;
-
-    const gCol = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-
-    let accY = topMargin;
-    const nodes = wordObj.letters.map((letter, lIdx) => {
-      const hPx = letter.h * heightScalePerLetter * unitPx;
-      const yLine = accY + hPx * 0.5;
-      accY += hPx;
-
-      const tNorm = colHeightPx > 1 ? (yLine - topMargin) / colHeightPx : 0.5;
-      const entasiMul = 1.0 + entasiVal * Math.sin(Math.PI * tNorm);
-      const halfW = Math.max(5, baseBarW * 0.5 * letter.w * globalWScale * entasiMul);
-
-      return { letter, lIdx, yLine, halfW };
-    });
-
-    const yTop = topMargin;
-    const yBot = topMargin + colHeightPx;
-
-    const polyPts = [];
-    if (nodes.length > 0) {
-      polyPts.push(`${centerX - nodes[0].halfW},${yTop}`);
-      nodes.forEach((nd) => polyPts.push(`${centerX - nd.halfW},${nd.yLine}`));
-      polyPts.push(`${centerX - nodes[nodes.length - 1].halfW},${yBot}`);
-      polyPts.push(`${centerX + nodes[nodes.length - 1].halfW},${yBot}`);
-      for (let k = nodes.length - 1; k >= 0; k--) {
-        polyPts.push(`${centerX + nodes[k].halfW},${nodes[k].yLine}`);
-      }
-      polyPts.push(`${centerX + nodes[0].halfW},${yTop}`);
+  for (const cmd of path.commands) {
+    if (cmd.type === 'M') {
+      doc.moveTo(cmd.x, cmd.y);
+      cx = cmd.x;
+      cy = cmd.y;
+      hasSegments = true;
+    } else if (cmd.type === 'L') {
+      doc.lineTo(cmd.x, cmd.y);
+      cx = cmd.x;
+      cy = cmd.y;
+    } else if (cmd.type === 'C') {
+      doc.curveTo(cmd.x1, cmd.y1, cmd.x2, cmd.y2, cmd.x, cmd.y);
+      cx = cmd.x;
+      cy = cmd.y;
+    } else if (cmd.type === 'Q') {
+      const c1x = cx + (2 / 3) * (cmd.x1 - cx);
+      const c1y = cy + (2 / 3) * (cmd.y1 - cy);
+      const c2x = cmd.x + (2 / 3) * (cmd.x1 - cmd.x);
+      const c2y = cmd.y + (2 / 3) * (cmd.y1 - cmd.y);
+      doc.curveTo(c1x, c1y, c2x, c2y, cmd.x, cmd.y);
+      cx = cmd.x;
+      cy = cmd.y;
+    } else if (cmd.type === 'Z') {
+      doc.close();
     }
+  }
 
-    const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-    poly.setAttribute('points', polyPts.join(' '));
-    poly.setAttribute('fill', theme.fg);
-    gCol.appendChild(poly);
+  if (hasSegments) {
+    doc.fill();
+  }
+}
 
-    const tickHalfSpan = Math.max(baseBarW * 1.15, 36);
+// --- Generazione PDF A4 ---
+function exportA4PDF() {
+  if (!window.jspdf || !window.jspdf.jsPDF) return;
+  const { jsPDF } = window.jspdf;
 
-    nodes.forEach((nd) => {
-      const { letter, lIdx, yLine, halfW } = nd;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const pageW = 210;
+  const pageH = 297;
+  const margin = 16;
+  const contentW = pageW - margin * 2;
 
-      const lineOut = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      lineOut.setAttribute('x1', centerX - tickHalfSpan);
-      lineOut.setAttribute('x2', centerX + tickHalfSpan);
-      lineOut.setAttribute('y1', yLine);
-      lineOut.setAttribute('y2', yLine);
-      lineOut.setAttribute('stroke', theme.line);
-      lineOut.setAttribute('stroke-width', '1');
-      gCol.appendChild(lineOut);
+  const isDark = state.darkMode;
+  const bgRgb = isDark ? [0, 0, 0] : [255, 255, 255];
+  const fgRgb = isDark ? [255, 255, 255] : [17, 17, 17];
 
-      const lineIn = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      lineIn.setAttribute('x1', centerX - halfW);
-      lineIn.setAttribute('x2', centerX + halfW);
-      lineIn.setAttribute('y1', yLine);
-      lineIn.setAttribute('y2', yLine);
-      lineIn.setAttribute('stroke', theme.bg);
-      lineIn.setAttribute('stroke-width', '1');
-      gCol.appendChild(lineIn);
+  doc.setFillColor(...bgRgb);
+  doc.rect(0, 0, pageW, pageH, 'F');
+  doc.setFillColor(...fgRgb);
+  doc.setDrawColor(...fgRgb);
+  doc.setLineWidth(0.28);
 
-      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      label.setAttribute('x', centerX - tickHalfSpan - 5);
-      label.setAttribute('y', yLine + 3.5);
-      label.setAttribute('text-anchor', 'end');
-      label.setAttribute('font-size', '11');
-      label.setAttribute('font-weight', '600');
-      label.setAttribute('fill', theme.fg);
-      label.textContent = letter.char;
-      gCol.appendChild(label);
+  drawFontTextOnPDF(doc, 'ARCHTYPE', margin, 22, 18, 'left');
+  drawFontTextOnPDF(doc, `FONT: ${state.fontName}`, pageW - margin, 22, 10, 'right');
+  doc.line(margin, 26, pageW - margin, 26);
 
-      // Triangolo Blu Sinistro & Destro
-      const triSize = 4.5;
+  const imgData = renderHighQualityDataURL(2400, 2180, true);
+  doc.addImage(imgData, 'PNG', margin, 29, contentW, 160);
 
-      const gTriL = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-      gTriL.classList.add('handle-blue');
-      const hitTriL = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      hitTriL.setAttribute('cx', centerX - halfW - triSize * 0.6);
-      hitTriL.setAttribute('cy', yLine);
-      hitTriL.setAttribute('r', '10');
-      hitTriL.setAttribute('fill', 'transparent');
-      const triL = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-      triL.setAttribute(
-        'points',
-        `${centerX - halfW - triSize - 1},${yLine} ${centerX - halfW - 1},${yLine - triSize} ${centerX - halfW - 1},${yLine + triSize}`
-      );
-      triL.setAttribute('fill', theme.bg);
-      triL.setAttribute('stroke', theme.blue);
-      triL.setAttribute('stroke-width', '1.2');
-      gTriL.appendChild(hitTriL);
-      gTriL.appendChild(triL);
-      attachBlueHandleDrag(gTriL, wIdx, lIdx, -1, baseBarW);
-      gCol.appendChild(gTriL);
+  const specTop = 193;
+  doc.line(margin, specTop, pageW - margin, specTop);
 
-      const gTriR = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-      gTriR.classList.add('handle-blue');
-      const hitTriR = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      hitTriR.setAttribute('cx', centerX + halfW + triSize * 0.6);
-      hitTriR.setAttribute('cy', yLine);
-      hitTriR.setAttribute('r', '10');
-      hitTriR.setAttribute('fill', 'transparent');
-      const triR = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-      triR.setAttribute(
-        'points',
-        `${centerX + halfW + triSize + 1},${yLine} ${centerX + halfW + 1},${yLine - triSize} ${centerX + halfW + 1},${yLine + triSize}`
-      );
-      triR.setAttribute('fill', theme.bg);
-      triR.setAttribute('stroke', theme.blue);
-      triR.setAttribute('stroke-width', '1.2');
-      gTriR.appendChild(hitTriR);
-      gTriR.appendChild(triR);
-      attachBlueHandleDrag(gTriR, wIdx, lIdx, 1, baseBarW);
-      gCol.appendChild(gTriR);
+  const dict = I18N[state.lang];
+  const p = getComputedParams();
+  const s = state.sliders;
 
-      // Rombo Rosso a destra (altezza segmento)
-      if (!state.globalHeight || wIdx === 0) {
-        const rx = centerX + tickHalfSpan + 7;
-        const r = 3.8;
+  let leftY = specTop + 8;
+  drawFontTextOnPDF(doc, dict.pdfPhrase, margin, leftY, 9.5, 'left');
+  leftY += 7;
 
-        const gRed = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-        gRed.classList.add('handle-red');
-
-        const hitRed = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-        hitRed.setAttribute('cx', rx);
-        hitRed.setAttribute('cy', yLine);
-        hitRed.setAttribute('r', '10');
-        hitRed.setAttribute('fill', 'transparent');
-
-        const diamond = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-        diamond.setAttribute(
-          'points',
-          `${rx},${yLine - r} ${rx + r},${yLine} ${rx},${yLine + r} ${rx - r},${yLine}`
-        );
-        diamond.setAttribute('fill', theme.bg);
-        diamond.setAttribute('stroke', theme.red);
-        diamond.setAttribute('stroke-width', '1.2');
-
-        gRed.appendChild(hitRed);
-        gRed.appendChild(diamond);
-        attachRedHandleDrag(gRed, wIdx, lIdx, unitPx);
-        gCol.appendChild(gRed);
-      }
-    });
-
-    columnsSvg.appendChild(gCol);
+  const wordsList = state.words.length > 0 ? state.words : [{ text: 'ARCHTYPE', letters: [] }];
+  wordsList.forEach((wObj) => {
+    drawFontTextOnPDF(doc, wObj.text, margin, leftY, 15, 'left');
+    leftY += 6.5;
   });
 
-  const totalSvgH = maxColPx + topMargin + bottomMargin;
-  columnsSvg.setAttribute('viewBox', `0 0 ${availW} ${totalSvgH}`);
-  columnsSvg.style.height = `${totalSvgH}px`;
+  leftY += 3;
+  drawFontTextOnPDF(doc, dict.pdfColumns, margin, leftY, 9, 'left');
+  leftY += 5.5;
+
+  const modifiedCols = state.words.filter((w) =>
+    w.letters.some((l) => Math.abs(l.h - 1.0) > 0.02 || Math.abs(l.w - 1.0) > 0.02)
+  );
+
+  if (modifiedCols.length === 0) {
+    drawFontTextOnPDF(doc, dict.pdfNone, margin, leftY, 8.5, 'left');
+  } else {
+    modifiedCols.slice(0, 4).forEach((wObj) => {
+      const detail = wObj.letters
+        .map((l) => `${l.char}[${l.h.toFixed(1)}/${l.w.toFixed(1)}]`)
+        .join(' ');
+      drawFontTextOnPDF(doc, `${wObj.text}: ${detail}`.slice(0, 48), margin, leftY, 8, 'left');
+      leftY += 5;
+    });
+  }
+
+  const rightColX = pageW * 0.52;
+  let rightY = specTop + 8;
+  drawFontTextOnPDF(doc, dict.pdfParams, rightColX, rightY, 9.5, 'left');
+  rightY += 7;
+
+  const rows = [
+    [dict.height, `${p.heightScale.toFixed(2)}X (${Math.round(s.height * 100)}%)`],
+    [dict.width, `${p.widthScale.toFixed(2)}X (${Math.round(s.width * 100)}%)`],
+    [dict.rotation, `${Math.round(p.rotationDeg)} DEG (${Math.round(s.rotation * 100)}%)`],
+    [dict.entasi, `${p.entasi.toFixed(2)} (${Math.round(s.entasi * 100)}%)`],
+    [dict.density, `${p.sheetsPerUnit.toFixed(1)} / U (${Math.round(s.density * 100)}%)`],
+    [dict.thickness, `${p.sheetThickness.toFixed(3)} (${Math.round(s.thickness * 100)}%)`],
+  ];
+  if (state.words.length > 1) {
+    rows.push([dict.distance, `${p.clusterSpacing.toFixed(1)} (${Math.round(s.distance * 100)}%)`]);
+  }
+
+  rows.forEach(([label, val]) => {
+    drawFontTextOnPDF(doc, label, rightColX, rightY, 9.5, 'left');
+    drawFontTextOnPDF(doc, val, pageW - margin, rightY, 9.5, 'right');
+    rightY += 6.2;
+  });
+
+  doc.line(margin, pageH - 14, pageW - margin, pageH - 14);
+  drawFontTextOnPDF(doc, 'ARCHTYPE — GENERATIVE 3D TYPOGRAPHY', margin, pageH - 9, 8, 'left');
+  drawFontTextOnPDF(doc, 'A4 SPECIMEN', pageW - margin, pageH - 9, 8, 'right');
+
+  const slug = state.text.trim().replace(/\s+/g, '_') || 'ARCHTYPE';
+  doc.save(`${slug}_A4.pdf`);
 }
 
-function attachRedHandleDrag(el, wIdx, lIdx, unitPx) {
+// --- COLONNA 2: Selettore Colonne Disposte a Cerchio e Sincronizzate col 3D ---
+const columnCirclesEl = document.getElementById('column-circles');
+const colVisualizerBlock = document.getElementById('col-visualizer-block');
+const visualizerBox = document.getElementById('visualizer-box');
+const columnEditorSvg = document.getElementById('column-editor-svg');
+
+function renderColumnSelectorCircles() {
+  columnCirclesEl.innerHTML = '';
+  columnCircleEls.length = 0;
+
+  state.words.forEach((wordObj, wIdx) => {
+    const firstChar = Array.from(wordObj.text)[0] || '?';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'col-circle-btn';
+    if (state.selectedColIdx === wIdx) btn.classList.add('selected');
+    btn.textContent = firstChar;
+    btn.title = wordObj.text;
+
+    btn.addEventListener('click', () => {
+      const selectingNew = state.selectedColIdx !== wIdx;
+      state.selectedColIdx = selectingNew ? wIdx : null;
+      state.selectedSegmentIdx = null;
+
+      if (selectingNew) {
+        focusCameraOnColumn(wIdx);
+      }
+
+      renderColumnSelectorCircles();
+      renderColumnVisualizer();
+    });
+
+    columnCirclesEl.appendChild(btn);
+    columnCircleEls.push(btn);
+  });
+
+  updateColumnSelectorOrbit();
+}
+
+function updateColumnSelectorOrbit() {
+  const n = columnCircleEls.length;
+  if (n === 0) return;
+
+  if (n === 1) {
+    columnCircleEls[0].style.transform = 'translate(0px, 0px)';
+    return;
+  }
+
+  camera.updateMatrixWorld();
+  const me = camera.matrixWorld.elements;
+  let rightX = me[0], rightZ = me[2];
+  const rightLen = Math.hypot(rightX, rightZ) || 1;
+  rightX /= rightLen;
+  rightZ /= rightLen;
+
+  let awayX = camera.position.x - controls.target.x;
+  let awayZ = camera.position.z - controls.target.z;
+  const awayLen = Math.hypot(awayX, awayZ) || 1;
+  awayX /= awayLen;
+  awayZ /= awayLen;
+
+  const orbitRadiusPx = 36;
+
+  for (let idx = 0; idx < n; idx++) {
+    const theta = Math.PI * 0.5 + (idx / n) * Math.PI * 2;
+    const wx = Math.cos(theta);
+    const wz = Math.sin(theta);
+
+    const sx = (wx * rightX + wz * rightZ) * orbitRadiusPx;
+    const sy = (wx * awayX + wz * awayZ) * orbitRadiusPx;
+    columnCircleEls[idx].style.transform = `translate(${sx.toFixed(1)}px, ${sy.toFixed(1)}px)`;
+  }
+}
+
+// --- COLONNA 2: Visualizzatore & Editor a Colonna (Nodi XY, Linee Orizzontali Y, Linee Laterali X) ---
+function renderColumnVisualizer() {
+  columnEditorSvg.innerHTML = '';
+
+  if (state.selectedColIdx === null || !state.words[state.selectedColIdx]) {
+    colVisualizerBlock.classList.add('hidden-editor');
+    return;
+  }
+
+  colVisualizerBlock.classList.remove('hidden-editor');
+
+  const letters = state.words[state.selectedColIdx].letters;
+  if (!letters || letters.length === 0) return;
+
+  const boxRect = visualizerBox.getBoundingClientRect();
+  const boxW = Math.max(150, Math.floor(boxRect.width));
+  const boxH = Math.max(150, Math.floor(boxRect.height));
+  columnEditorSvg.setAttribute('viewBox', `0 0 ${boxW} ${boxH}`);
+
+  const fgColor = state.darkMode ? '#ffffff' : '#111111';
+  const cx = boxW * 0.5;
+  const baselineY = boxH - 12;
+  const availH = Math.max(40, baselineY - 14);
+  const maxHalfW = Math.max(28, boxW * 0.42);
+  const baseHalfW = Math.min(34, maxHalfW * 0.56);
+
+  const m = letters.length;
+  const spanWeights =
+    m === 1
+      ? [letters[0].h]
+      : Array.from({ length: m - 1 }, (_, i) => (letters[i].h + letters[i + 1].h) * 0.5);
+
+  const totalSpanWeight = spanWeights.reduce((a, b) => a + b, 0);
+  const naturalUnitPx = 34;
+  const unitPx =
+    totalSpanWeight * naturalUnitPx > availH
+      ? availH / Math.max(totalSpanWeight, 0.2)
+      : naturalUnitPx;
+
+  const leftEdgePts = [];
+  const rightEdgePts = [];
+
+  if (m === 1) {
+    const hPx = Math.min(availH, letters[0].h * unitPx);
+    const halfW = THREE.MathUtils.clamp(baseHalfW * letters[0].w, 8, maxHalfW);
+    leftEdgePts.push({ x: cx - halfW, y: baselineY - hPx, letterIdx: 0 });
+    leftEdgePts.push({ x: cx - halfW, y: baselineY, letterIdx: 0 });
+    rightEdgePts.push({ x: cx + halfW, y: baselineY - hPx, letterIdx: 0 });
+    rightEdgePts.push({ x: cx + halfW, y: baselineY, letterIdx: 0 });
+  } else {
+    let currY = baselineY;
+    const rungs = new Array(m);
+    for (let i = m - 1; i >= 0; i--) {
+      const halfW = THREE.MathUtils.clamp(baseHalfW * letters[i].w, 8, maxHalfW);
+      rungs[i] = { xL: cx - halfW, xR: cx + halfW, y: currY, letterIdx: i };
+      if (i > 0) currY -= spanWeights[i - 1] * unitPx;
+    }
+    for (const r of rungs) {
+      leftEdgePts.push({ x: r.xL, y: r.y, letterIdx: r.letterIdx });
+      rightEdgePts.push({ x: r.xR, y: r.y, letterIdx: r.letterIdx });
+    }
+  }
+
+  const makeSvgEl = (tag, attrs) => {
+    const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    return el;
+  };
+
+  // Linea di base inferiore
+  const baseLineSpan = Math.min(boxW * 0.46, maxHalfW + 18);
+  columnEditorSvg.appendChild(
+    makeSvgEl('line', {
+      x1: cx - baseLineSpan,
+      x2: cx + baseLineSpan,
+      y1: baselineY,
+      y2: baselineY,
+      stroke: fgColor,
+      'stroke-width': '1',
+    })
+  );
+
+  // Segmenti laterali (verticali o inclinati): traslano solo in X (destra/sinistra)
+  for (let sIdx = 0; sIdx < leftEdgePts.length - 1; sIdx++) {
+    const affectedIndices =
+      m === 1 ? [0] : [leftEdgePts[sIdx].letterIdx, leftEdgePts[sIdx + 1].letterIdx];
+
+    [
+      { p0: leftEdgePts[sIdx], p1: leftEdgePts[sIdx + 1], sideSign: -1 },
+      { p0: rightEdgePts[sIdx], p1: rightEdgePts[sIdx + 1], sideSign: 1 },
+    ].forEach(({ p0, p1, sideSign }) => {
+      const vGroup = makeSvgEl('g', { class: 'col-v-line-group' });
+      vGroup.appendChild(
+        makeSvgEl('line', {
+          x1: p0.x,
+          y1: p0.y,
+          x2: p1.x,
+          y2: p1.y,
+          stroke: 'transparent',
+          'stroke-width': '12',
+        })
+      );
+      vGroup.appendChild(
+        makeSvgEl('line', {
+          class: 'col-line-visible',
+          x1: p0.x,
+          y1: p0.y,
+          x2: p1.x,
+          y2: p1.y,
+          'stroke-width': '1',
+        })
+      );
+      attachSideLineHorizontalDrag(vGroup, affectedIndices, sideSign, baseHalfW);
+      columnEditorSvg.appendChild(vGroup);
+    });
+  }
+
+  // Linee orizzontali: traslano solo in Y (su/giù)
+  for (let idx = 0; idx < leftEdgePts.length; idx++) {
+    const lp = leftEdgePts[idx];
+    const rp = rightEdgePts[idx];
+    const lIdx = lp.letterIdx;
+    const isSelected = state.selectedSegmentIdx === lIdx;
+
+    const hGroup = makeSvgEl('g', { class: 'col-h-line-group' });
+    hGroup.appendChild(
+      makeSvgEl('line', {
+        x1: lp.x,
+        x2: rp.x,
+        y1: lp.y,
+        y2: rp.y,
+        stroke: 'transparent',
+        'stroke-width': '12',
+      })
+    );
+    hGroup.appendChild(
+      makeSvgEl('line', {
+        class: 'col-line-visible',
+        x1: lp.x,
+        x2: rp.x,
+        y1: lp.y,
+        y2: rp.y,
+        'stroke-width': isSelected ? '1.6' : '1',
+      })
+    );
+    attachRungVerticalDrag(hGroup, lIdx, unitPx);
+    columnEditorSvg.appendChild(hGroup);
+  }
+
+  // Nodi circolari agli estremi: traslano sia in X che in Y
+  for (let idx = 0; idx < leftEdgePts.length; idx++) {
+    const lp = leftEdgePts[idx];
+    const rp = rightEdgePts[idx];
+    const lIdx = lp.letterIdx;
+    const isSelected = state.selectedSegmentIdx === lIdx;
+
+    [
+      { x: lp.x, y: lp.y, sideSign: -1 },
+      { x: rp.x, y: rp.y, sideSign: 1 },
+    ].forEach(({ x, y, sideSign }) => {
+      const gNode = makeSvgEl('g', {
+        class: isSelected ? 'col-node-group selected' : 'col-node-group',
+      });
+      gNode.appendChild(makeSvgEl('circle', { cx: x, cy: y, r: '11', fill: 'transparent' }));
+      gNode.appendChild(makeSvgEl('circle', { class: 'col-node-circle', cx: x, cy: y, r: '4.6' }));
+      attachCombinedNodeDrag(gNode, lIdx, sideSign, baseHalfW, unitPx);
+      columnEditorSvg.appendChild(gNode);
+    });
+  }
+}
+
+// Drag 2D sui punti (X + Y)
+function attachCombinedNodeDrag(el, lIdx, sideSign, baseHalfW, unitPx) {
   el.addEventListener('pointerdown', (e) => {
     e.stopPropagation();
     e.preventDefault();
+
+    const wIdx = state.selectedColIdx;
+    if (wIdx === null || !state.words[wIdx]?.letters[lIdx]) return;
+
+    state.selectedSegmentIdx = lIdx;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startW = state.words[wIdx].letters[lIdx].w;
+    const startH = state.words[wIdx].letters[lIdx].h;
+
+    const onMove = (ev) => {
+      if (state.selectedColIdx !== wIdx || !state.words[wIdx]?.letters[lIdx]) return;
+
+      const dx = (ev.clientX - startX) * sideSign;
+      const dyUp = startY - ev.clientY;
+
+      state.words[wIdx].letters[lIdx].w = THREE.MathUtils.clamp(
+        startW + dx / Math.max(baseHalfW, 12),
+        0.25,
+        2.0
+      );
+      state.words[wIdx].letters[lIdx].h = THREE.MathUtils.clamp(
+        startH + dyUp / Math.max(unitPx, 14),
+        0.3,
+        2.5
+      );
+
+      renderColumnVisualizer();
+      rebuildScene();
+    };
+
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      renderColumnVisualizer();
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+  });
+}
+
+// Drag solo verticale (Y) sulle linee orizzontali
+function attachRungVerticalDrag(el, lIdx, unitPx) {
+  el.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+
+    const wIdx = state.selectedColIdx;
+    if (wIdx === null || !state.words[wIdx]?.letters[lIdx]) return;
+
+    state.selectedSegmentIdx = lIdx;
     const startY = e.clientY;
     const startH = state.words[wIdx].letters[lIdx].h;
 
     const onMove = (ev) => {
-      const dy = ev.clientY - startY;
-      const newH = THREE.MathUtils.clamp(startH + dy / Math.max(unitPx, 12), 0.35, 2.6);
+      if (state.selectedColIdx !== wIdx || !state.words[wIdx]?.letters[lIdx]) return;
 
-      if (state.globalHeight) {
-        state.words.forEach((w) => {
-          if (w.letters[lIdx]) w.letters[lIdx].h = newH;
-        });
-      } else if (state.words[wIdx] && state.words[wIdx].letters[lIdx]) {
-        state.words[wIdx].letters[lIdx].h = newH;
-      }
+      const dyUp = startY - ev.clientY;
+      state.words[wIdx].letters[lIdx].h = THREE.MathUtils.clamp(
+        startH + dyUp / Math.max(unitPx, 14),
+        0.3,
+        2.5
+      );
 
-      renderColumnsUI();
-      rebuildScene(false);
+      renderColumnVisualizer();
+      rebuildScene();
     };
 
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
+      renderColumnVisualizer();
     };
 
     window.addEventListener('pointermove', onMove);
@@ -1041,33 +1440,44 @@ function attachRedHandleDrag(el, wIdx, lIdx, unitPx) {
   });
 }
 
-function attachBlueHandleDrag(el, wIdx, lIdx, sideSign, baseBarW) {
+// Drag solo orizzontale (X) sulle linee verticali/inclinate
+function attachSideLineHorizontalDrag(el, letterIndices, sideSign, baseHalfW) {
   el.addEventListener('pointerdown', (e) => {
     e.stopPropagation();
     e.preventDefault();
+
+    const wIdx = state.selectedColIdx;
+    if (wIdx === null || !state.words[wIdx]) return;
+
+    state.selectedSegmentIdx = letterIndices[0];
     const startX = e.clientX;
-    const startW = state.words[wIdx].letters[lIdx].w;
+    const initialWidths = letterIndices.map((idx) => state.words[wIdx].letters[idx].w);
 
     const onMove = (ev) => {
+      if (state.selectedColIdx !== wIdx || !state.words[wIdx]) return;
+
       const dx = (ev.clientX - startX) * sideSign;
-      const newW = THREE.MathUtils.clamp(startW + (dx * 2) / Math.max(baseBarW, 18), 0.25, 2.1);
+      const deltaW = dx / Math.max(baseHalfW, 12);
 
-      if (state.globalWidth) {
-        state.words.forEach((w) => {
-          if (w.letters[lIdx]) w.letters[lIdx].w = newW;
-        });
-      } else if (state.words[wIdx] && state.words[wIdx].letters[lIdx]) {
-        state.words[wIdx].letters[lIdx].w = newW;
-      }
+      letterIndices.forEach((idx, k) => {
+        if (state.words[wIdx].letters[idx]) {
+          state.words[wIdx].letters[idx].w = THREE.MathUtils.clamp(
+            initialWidths[k] + deltaW,
+            0.25,
+            2.0
+          );
+        }
+      });
 
-      renderColumnsUI();
-      rebuildScene(false);
+      renderColumnVisualizer();
+      rebuildScene();
     };
 
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
+      renderColumnVisualizer();
     };
 
     window.addEventListener('pointermove', onMove);
@@ -1076,127 +1486,31 @@ function attachBlueHandleDrag(el, wIdx, lIdx, sideSign, baseBarW) {
   });
 }
 
-// --- Rendering UI 2D: Diale di Rotazione con 16 Linee Equidistanti ---
-function renderDialsUI() {
-  dialsSvg.innerHTML = '';
-  const { availW, slotW } = getColumnLayoutMetrics();
-  const theme = getThemeColors();
-  const h = 76;
-  const cy = h * 0.5;
-  const radius = 21;
+// --- COLONNA 1: 7 Slider Globali ---
+const sliderElements = new Map();
 
-  dialsSvg.setAttribute('viewBox', `0 0 ${availW} ${h}`);
+document.querySelectorAll('.slider-item').forEach((item) => {
+  const key = item.dataset.key;
+  const trackWrap = item.querySelector('.slider-track-wrap');
+  const thumb = item.querySelector('.slider-thumb');
+  sliderElements.set(key, thumb);
 
-  state.words.forEach((wordObj, wIdx) => {
-    const cx = slotW * (wIdx + 0.5) + 8;
+  const updateFromClientX = (clientX) => {
+    const rect = trackWrap.getBoundingClientRect();
+    const ratio = THREE.MathUtils.clamp((clientX - rect.left) / Math.max(rect.width, 1), 0, 1);
+    state.sliders[key] = ratio;
+    thumb.style.left = `${ratio * 100}%`;
+    rebuildScene();
+  };
 
-    if (wIdx < state.words.length - 1) {
-      const nextCx = slotW * (wIdx + 1.5) + 8;
-      const conn = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      conn.setAttribute('x1', cx + radius + 6);
-      conn.setAttribute('x2', nextCx - radius - 6);
-      conn.setAttribute('y1', cy);
-      conn.setAttribute('y2', cy);
-      conn.setAttribute('stroke', theme.line);
-      conn.setAttribute('stroke-width', '1');
-      dialsSvg.appendChild(conn);
-    }
-
-    const gDial = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    gDial.classList.add('dial-unit');
-
-    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    circle.setAttribute('cx', cx);
-    circle.setAttribute('cy', cy);
-    circle.setAttribute('r', radius);
-    circle.setAttribute('fill', theme.bg);
-    circle.setAttribute('stroke', theme.fg);
-    circle.setAttribute('stroke-width', '1.2');
-    gDial.appendChild(circle);
-
-    const deg = wordObj.dialAngle;
-    const rad = THREE.MathUtils.degToRad(deg);
-
-    if (Math.abs(deg) > 0.5) {
-      const numRays = 16;
-      for (let i = 0; i < numRays; i++) {
-        const frac = i / (numRays - 1);
-        const a = -Math.PI * 0.5 + rad * frac;
-        const ray = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        ray.setAttribute('x1', cx);
-        ray.setAttribute('y1', cy);
-        ray.setAttribute('x2', cx + Math.cos(a) * (radius - 1));
-        ray.setAttribute('y2', cy + Math.sin(a) * (radius - 1));
-        ray.setAttribute('stroke', theme.line);
-        ray.setAttribute('stroke-width', '0.85');
-        gDial.appendChild(ray);
-      }
-    }
-
-    const pointerA = -Math.PI * 0.5 + rad;
-    const px = cx + Math.cos(pointerA) * radius;
-    const py = cy + Math.sin(pointerA) * radius;
-
-    const needle = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    needle.setAttribute('x1', cx);
-    needle.setAttribute('y1', cy);
-    needle.setAttribute('x2', px);
-    needle.setAttribute('y2', py);
-    needle.setAttribute('stroke', theme.fg);
-    needle.setAttribute('stroke-width', '1.3');
-    gDial.appendChild(needle);
-
-    const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    dot.setAttribute('cx', px);
-    dot.setAttribute('cy', py);
-    dot.setAttribute('r', '3.2');
-    dot.setAttribute('fill', theme.bg);
-    dot.setAttribute('stroke', theme.orange);
-    dot.setAttribute('stroke-width', '1.4');
-    gDial.appendChild(dot);
-
-    attachDialDrag(gDial, wIdx, cx, cy);
-    dialsSvg.appendChild(gDial);
-  });
-}
-
-function attachDialDrag(el, wIdx, dialCx, dialCy) {
-  el.addEventListener('pointerdown', (e) => {
-    e.stopPropagation();
+  trackWrap.addEventListener('pointerdown', (e) => {
     e.preventDefault();
+    trackWrap.classList.add('dragging');
+    updateFromClientX(e.clientX);
 
-    const getPointerAngleDeg = (ev) => {
-      const rect = dialsSvg.getBoundingClientRect();
-      const vb = dialsSvg.viewBox.baseVal;
-      const sx = ((ev.clientX - rect.left) / Math.max(rect.width, 1)) * vb.width;
-      const sy = ((ev.clientY - rect.top) / Math.max(rect.height, 1)) * vb.height;
-      return THREE.MathUtils.radToDeg(Math.atan2(sy - dialCy, sx - dialCx));
-    };
-
-    let prevAngle = getPointerAngleDeg(e);
-
-    const onMove = (ev) => {
-      const currAngle = getPointerAngleDeg(ev);
-      let delta = currAngle - prevAngle;
-      if (delta > 180) delta -= 360;
-      if (delta < -180) delta += 360;
-      prevAngle = currAngle;
-
-      if (!state.words[wIdx]) return;
-      const updated = THREE.MathUtils.clamp(state.words[wIdx].dialAngle + delta, -540, 540);
-      if (state.globalRotation) {
-        state.words.forEach((w) => {
-          w.dialAngle = updated;
-        });
-      } else {
-        state.words[wIdx].dialAngle = updated;
-      }
-
-      renderDialsUI();
-      rebuildScene(false);
-    };
-
+    const onMove = (ev) => updateFromClientX(ev.clientX);
     const onUp = () => {
+      trackWrap.classList.remove('dragging');
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
@@ -1206,315 +1520,108 @@ function attachDialDrag(el, wIdx, dialCx, dialCy) {
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onUp);
   });
-}
-
-// --- Controlli Globali Sinistra (Altezza Uguale, Altezza Globale Invertita, Larghezza, Entasi, Rotazione) ---
-const toggleEqualHeight = document.getElementById('toggle-equal-height');
-toggleEqualHeight.addEventListener('click', () => {
-  state.equalHeight = !state.equalHeight;
-  toggleEqualHeight.classList.toggle('active', state.equalHeight);
-  renderColumnsUI();
-  rebuildScene(false);
 });
 
-const toggleGlobalHeight = document.getElementById('toggle-global-height');
-const globalHeightWrap = document.getElementById('global-height-slider-wrap');
-const globalHeightSlider = document.getElementById('global-height-slider');
-const globalHeightThumb = document.getElementById('global-height-thumb');
-
-toggleGlobalHeight.addEventListener('click', () => {
-  state.globalHeight = !state.globalHeight;
-  toggleGlobalHeight.classList.toggle('active', state.globalHeight);
-  globalHeightWrap.hidden = !state.globalHeight;
-  renderColumnsUI();
-  rebuildScene(false);
-});
-
-// Slider globale altezza INVERTITO: in alto (ratio=0) = 0.45, in basso (ratio=1) = 1.75
-globalHeightSlider.style.touchAction = 'none';
-globalHeightSlider.addEventListener('pointerdown', (e) => {
-  e.preventDefault();
-  const updateFromEvent = (ev) => {
-    const rect = globalHeightSlider.getBoundingClientRect();
-    const ratio = THREE.MathUtils.clamp((ev.clientY - rect.top) / rect.height, 0, 1);
-    globalHeightThumb.style.top = `${ratio * 100}%`;
-    state.globalHeightScale = 0.45 + ratio * 1.3;
-    renderColumnsUI();
-    rebuildScene(false);
-  };
-  updateFromEvent(e);
-  const onUp = () => {
-    window.removeEventListener('pointermove', updateFromEvent);
-    window.removeEventListener('pointerup', onUp);
-    window.removeEventListener('pointercancel', onUp);
-  };
-  window.addEventListener('pointermove', updateFromEvent);
-  window.addEventListener('pointerup', onUp);
-  window.addEventListener('pointercancel', onUp);
-});
-
-const toggleGlobalWidth = document.getElementById('toggle-global-width');
-const globalWidthControls = document.getElementById('global-width-controls');
-const globalWidthSlider = document.getElementById('global-width-slider');
-const globalWidthThumb = document.getElementById('global-width-thumb');
-
-toggleGlobalWidth.addEventListener('click', () => {
-  state.globalWidth = !state.globalWidth;
-  toggleGlobalWidth.classList.toggle('active', state.globalWidth);
-  globalWidthControls.hidden = !state.globalWidth;
-  renderColumnsUI();
-  rebuildScene(false);
-});
-
-globalWidthSlider.style.touchAction = 'none';
-globalWidthSlider.addEventListener('pointerdown', (e) => {
-  e.preventDefault();
-  const updateFromEvent = (ev) => {
-    const rect = globalWidthSlider.getBoundingClientRect();
-    const ratio = THREE.MathUtils.clamp((ev.clientX - rect.left) / rect.width, 0, 1);
-    globalWidthThumb.style.left = `${ratio * 100}%`;
-    state.globalWidthScale = 0.4 + ratio * 1.35;
-    renderColumnsUI();
-    rebuildScene(false);
-  };
-  updateFromEvent(e);
-  const onUp = () => {
-    window.removeEventListener('pointermove', updateFromEvent);
-    window.removeEventListener('pointerup', onUp);
-    window.removeEventListener('pointercancel', onUp);
-  };
-  window.addEventListener('pointermove', updateFromEvent);
-  window.addEventListener('pointerup', onUp);
-  window.addEventListener('pointercancel', onUp);
-});
-
-const entasiWidget = document.getElementById('global-entasi-widget');
-const entasiPoly = document.getElementById('entasi-poly');
-const entasiTriL = document.getElementById('entasi-tri-l');
-const entasiTriR = document.getElementById('entasi-tri-r');
-
-function updateEntasiIcon() {
-  const midHalf = 10 + state.entasi * 10;
-  const lx = 24 - midHalf;
-  const rx = 24 + midHalf;
-  entasiPoly.setAttribute('points', `14,6 34,6 ${rx},33 34,60 14,60 ${lx},33`);
-  entasiTriL.setAttribute('points', `${lx - 6},33 ${lx - 1},29.5 ${lx - 1},36.5`);
-  entasiTriR.setAttribute('points', `${rx + 6},33 ${rx + 1},29.5 ${rx + 1},36.5`);
-}
-
-entasiWidget.style.touchAction = 'none';
-entasiWidget.addEventListener('pointerdown', (e) => {
-  e.preventDefault();
-  const startX = e.clientX;
-  const startEntasi = state.entasi;
-
-  const onMove = (ev) => {
-    const dx = ev.clientX - startX;
-    state.entasi = THREE.MathUtils.clamp(startEntasi + dx * 0.015, -0.55, 0.85);
-    updateEntasiIcon();
-    renderColumnsUI();
-    rebuildScene(false);
-  };
-
-  const onUp = () => {
-    window.removeEventListener('pointermove', onMove);
-    window.removeEventListener('pointerup', onUp);
-    window.removeEventListener('pointercancel', onUp);
-  };
-
-  window.addEventListener('pointermove', onMove);
-  window.addEventListener('pointerup', onUp);
-  window.addEventListener('pointercancel', onUp);
-});
-
-const toggleGlobalRot = document.getElementById('toggle-global-rot');
-toggleGlobalRot.addEventListener('click', () => {
-  state.globalRotation = !state.globalRotation;
-  toggleGlobalRot.classList.toggle('active', state.globalRotation);
-  if (state.globalRotation && state.words.length > 0) {
-    const masterAngle = state.words[0].dialAngle;
-    state.words.forEach((w) => {
-      w.dialAngle = masterAngle;
-    });
-    renderDialsUI();
-    rebuildScene(false);
-  }
-});
-
-// --- Controlli Inferiori: Distanza Colonne | Densità Fogli | Spessore Fogli ---
-const clusterTri = document.getElementById('cluster-tri');
-const clusterDots = [
-  document.getElementById('cluster-dot-0'),
-  document.getElementById('cluster-dot-1'),
-  document.getElementById('cluster-dot-2'),
-];
-
-function updateClusterIcon(norm) {
-  const r = 6 + norm * 16;
-  const pts = [];
-  for (let i = 0; i < 3; i++) {
-    const a = -Math.PI * 0.5 + (i * Math.PI * 2) / 3;
-    const x = 37 + Math.cos(a) * r;
-    const y = 37 + Math.sin(a) * r;
-    pts.push(`${x.toFixed(1)},${y.toFixed(1)}`);
-    clusterDots[i].setAttribute('cx', x.toFixed(1));
-    clusterDots[i].setAttribute('cy', y.toFixed(1));
-  }
-  clusterTri.setAttribute('points', pts.join(' '));
-}
-
-let clusterNorm = 0.28;
-updateClusterIcon(clusterNorm);
-
-clusterCtrl.style.touchAction = 'none';
-clusterCtrl.addEventListener('pointerdown', (e) => {
-  e.preventDefault();
-  const startX = e.clientX;
-  const startNorm = clusterNorm;
-
-  const onMove = (ev) => {
-    clusterNorm = THREE.MathUtils.clamp(startNorm + (ev.clientX - startX) / 70, 0, 1);
-    updateClusterIcon(clusterNorm);
-    state.clusterSpacing = clusterNorm * 11.0;
-    rebuildScene(false);
-  };
-
-  const onUp = () => {
-    window.removeEventListener('pointermove', onMove);
-    window.removeEventListener('pointerup', onUp);
-    window.removeEventListener('pointercancel', onUp);
-  };
-
-  window.addEventListener('pointermove', onMove);
-  window.addEventListener('pointerup', onUp);
-  window.addEventListener('pointercancel', onUp);
-});
-
-const densityCtrl = document.getElementById('density-control');
-const densityBars = Array.from(document.querySelectorAll('.d-bar'));
-
-function updateDensityIcon(norm) {
-  const activeCount = Math.max(1, Math.round(norm * 6));
-  densityBars.forEach((bar, idx) => {
-    bar.classList.toggle('active', idx < activeCount);
+function syncSlidersUI() {
+  SLIDER_KEYS.forEach((key) => {
+    const thumb = sliderElements.get(key);
+    if (thumb) thumb.style.left = `${state.sliders[key] * 100}%`;
   });
 }
 
-let densityNorm = 0.5;
-updateDensityIcon(densityNorm);
-
-densityCtrl.style.touchAction = 'none';
-densityCtrl.addEventListener('pointerdown', (e) => {
-  e.preventDefault();
-  const updateFromEvent = (ev) => {
-    const rect = densityCtrl.getBoundingClientRect();
-    densityNorm = THREE.MathUtils.clamp((ev.clientX - rect.left) / rect.width, 0.05, 1);
-    updateDensityIcon(densityNorm);
-    state.columnLayers = Math.round(12 + densityNorm * 80);
-    rebuildScene(false);
-  };
-  updateFromEvent(e);
-  const onUp = () => {
-    window.removeEventListener('pointermove', updateFromEvent);
-    window.removeEventListener('pointerup', onUp);
-    window.removeEventListener('pointercancel', onUp);
-  };
-  window.addEventListener('pointermove', updateFromEvent);
-  window.addEventListener('pointerup', onUp);
-  window.addEventListener('pointercancel', onUp);
+// --- Pulsanti Resetta Globale & Resetta Forma ---
+document.getElementById('btn-reset-global').addEventListener('click', (e) => {
+  e.currentTarget.blur();
+  state.sliders = createDefaultSliders();
+  syncSlidersUI();
+  rebuildScene();
 });
 
-const thicknessCtrl = document.getElementById('thickness-control');
-const cubeSideR = document.getElementById('cube-side-r');
-const cubeSideB = document.getElementById('cube-side-b');
-
-function updateThicknessIcon(norm) {
-  const depth = 2 + norm * 16;
-  const dx = depth;
-  const dy = depth * 0.72;
-  cubeSideR.setAttribute('points', `48,14 ${48 + dx},${14 + dy} ${48 + dx},${52 + dy} 48,52`);
-  cubeSideB.setAttribute('points', `10,52 48,52 ${48 + dx},${52 + dy} ${10 + dx},${52 + dy}`);
-}
-
-let thicknessNorm = 0.28;
-updateThicknessIcon(thicknessNorm);
-
-thicknessCtrl.style.touchAction = 'none';
-thicknessCtrl.addEventListener('pointerdown', (e) => {
-  e.preventDefault();
-  const startX = e.clientX;
-  const startNorm = thicknessNorm;
-
-  const onMove = (ev) => {
-    thicknessNorm = THREE.MathUtils.clamp(startNorm + (ev.clientX - startX) / 70, 0.02, 1);
-    updateThicknessIcon(thicknessNorm);
-    state.sheetThickness = 0.015 + thicknessNorm * 0.44;
-    rebuildScene(false);
-  };
-
-  const onUp = () => {
-    window.removeEventListener('pointermove', onMove);
-    window.removeEventListener('pointerup', onUp);
-    window.removeEventListener('pointercancel', onUp);
-  };
-
-  window.addEventListener('pointermove', onMove);
-  window.addEventListener('pointerup', onUp);
-  window.addEventListener('pointercancel', onUp);
+document.getElementById('btn-reset-column').addEventListener('click', (e) => {
+  e.currentTarget.blur();
+  if (state.selectedColIdx === null || !state.words[state.selectedColIdx]) return;
+  state.words[state.selectedColIdx].letters.forEach((l) => {
+    l.h = 1.0;
+    l.w = 1.0;
+  });
+  state.selectedSegmentIdx = null;
+  renderColumnVisualizer();
+  rebuildScene();
 });
 
-// --- Toggle Dark Mode & Modalità Senza Colori (Alto a Sinistra Viewport) ---
-const btnDarkMode = document.getElementById('btn-dark-mode');
-const btnMonoMode = document.getElementById('btn-mono-mode');
-
-btnDarkMode.addEventListener('click', () => {
+// --- Toggle Notte & Lingua ITA / ENG (senza stato evidenziato persistente) ---
+document.getElementById('btn-dark-mode').addEventListener('click', (e) => {
+  e.currentTarget.blur();
   state.darkMode = !state.darkMode;
-  btnDarkMode.classList.toggle('active', state.darkMode);
   document.body.classList.toggle('dark-mode', state.darkMode);
   syncThemeTo3D();
-  renderColumnsUI();
-  renderDialsUI();
+  applyLanguage();
+  renderColumnVisualizer();
 });
 
-btnMonoMode.addEventListener('click', () => {
-  state.monoMode = !state.monoMode;
-  btnMonoMode.classList.toggle('active', state.monoMode);
-  document.body.classList.toggle('mono-mode', state.monoMode);
-  renderColumnsUI();
-  renderDialsUI();
+document.getElementById('btn-lang-toggle').addEventListener('click', (e) => {
+  e.currentTarget.blur();
+  state.lang = state.lang === 'it' ? 'en' : 'it';
+  applyLanguage();
 });
 
-// --- Caricamento Font & Eventi Testo/Export ---
-const statusBadge = document.getElementById('status-badge');
+// --- Menù Selezione Font Custom (Bordo Nero, Sfondo Bianco, Filetti Divisori) ---
+const fontDropdownBtn = document.getElementById('font-dropdown-btn');
+const fontDropdownMenu = document.getElementById('font-dropdown-menu');
+const fontSelectedLabel = document.getElementById('font-selected-label');
 
-function setLoadedFont(font, label) {
+function setLoadedFont(font, name, initialFit = false) {
   glyphCache.clear();
   clearWordMeshCache();
   currentFont = font;
-  statusBadge.textContent = label || 'Pronto';
-  renderColumnsUI();
-  renderDialsUI();
-  rebuildScene(false);
+  if (name) {
+    state.fontName = name;
+    fontSelectedLabel.textContent = name;
+  }
+  rebuildScene({ fit: initialFit });
 }
 
-function loadFontFromUrl(url) {
-  statusBadge.textContent = 'Caricamento...';
+function loadFontFromUrl(url, name, fallbackPreset = null, initialFit = false) {
   window.opentype.load(url, (err, font) => {
     if (err || !font) {
-      statusBadge.textContent = 'Errore font';
+      if (fallbackPreset) loadFontFromUrl(fallbackPreset.url, fallbackPreset.name, null, initialFit);
       return;
     }
-    setLoadedFont(font, 'Pronto');
+    setLoadedFont(font, name, initialFit);
   });
 }
 
-document.querySelectorAll('.font-btn').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.font-btn').forEach((b) => b.classList.remove('active'));
-    btn.classList.add('active');
-    const idx = parseInt(btn.dataset.font, 10);
-    loadFontFromUrl(FONT_PRESETS[idx]);
+function setActiveFontOption(targetBtn) {
+  fontDropdownMenu.querySelectorAll('.font-option').forEach((btn) => {
+    btn.classList.toggle('active', btn === targetBtn);
   });
+}
+
+fontDropdownBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const isOpen = !fontDropdownMenu.hidden;
+  fontDropdownMenu.hidden = isOpen;
+  fontDropdownBtn.setAttribute('aria-expanded', String(!isOpen));
+});
+
+fontDropdownMenu.addEventListener('pointerdown', (e) => e.stopPropagation());
+
+fontDropdownMenu.addEventListener('click', (e) => {
+  const optBtn = e.target.closest('.font-option');
+  if (!optBtn) return;
+
+  setActiveFontOption(optBtn);
+  fontDropdownMenu.hidden = true;
+  fontDropdownBtn.setAttribute('aria-expanded', 'false');
+
+  if (optBtn.dataset.custom !== undefined) {
+    const idx = parseInt(optBtn.dataset.custom, 10);
+    if (customFonts[idx]) setLoadedFont(customFonts[idx].font, customFonts[idx].name);
+  } else if (optBtn.dataset.preset !== undefined) {
+    const idx = parseInt(optBtn.dataset.preset, 10);
+    const preset = FONT_PRESETS[idx];
+    if (preset) loadFontFromUrl(preset.url, preset.name, FONT_PRESETS[1]);
+  }
 });
 
 document.getElementById('font-upload').addEventListener('change', (e) => {
@@ -1523,32 +1630,114 @@ document.getElementById('font-upload').addEventListener('change', (e) => {
   const reader = new FileReader();
   reader.onload = () => {
     try {
-      document.querySelectorAll('.font-btn').forEach((b) => b.classList.remove('active'));
-      setLoadedFont(window.opentype.parse(reader.result), file.name.slice(0, 12));
+      const parsed = window.opentype.parse(reader.result);
+      const cleanName = file.name.replace(/\.[^/.]+$/, '').toUpperCase().slice(0, 16) || `FONT ${customFonts.length + 1}`;
+      const customIdx = customFonts.push({ font: parsed, name: cleanName }) - 1;
+
+      const optBtn = document.createElement('button');
+      optBtn.type = 'button';
+      optBtn.className = 'font-option';
+      optBtn.dataset.custom = String(customIdx);
+      optBtn.textContent = cleanName;
+      fontDropdownMenu.appendChild(optBtn);
+
+      setActiveFontOption(optBtn);
+      setLoadedFont(parsed, cleanName);
     } catch {
-      statusBadge.textContent = 'Font non valido';
+      // Font non valido
     }
   };
   reader.readAsArrayBuffer(file);
 });
 
+// --- Eventi Box di Testo in Epigrafe ---
 const textInput = document.getElementById('text-input');
+
+textInput.addEventListener('keydown', (e) => {
+  if (e.key === ' ' || e.key === 'Enter') {
+    e.preventDefault();
+    const val = textInput.value;
+    const pos = textInput.selectionStart ?? val.length;
+    const end = textInput.selectionEnd ?? pos;
+    const before = val.slice(0, pos);
+    const after = val.slice(end);
+
+    if (before.length === 0 || before.endsWith('\n') || after.startsWith('\n')) return;
+    if (val.split('\n').filter(Boolean).length >= MAX_WORDS) return;
+
+    const cleaned = formatEpigraphText(`${before}\n${after}`);
+    textInput.value = cleaned;
+    const nextCursor = Math.min(pos + 1, cleaned.length);
+    textInput.setSelectionRange(nextCursor, nextCursor);
+
+    renderColumnSelectorCircles();
+    renderColumnVisualizer();
+    rebuildScene({ fit: true });
+  }
+});
+
 textInput.addEventListener('input', (e) => {
-  const cleaned = sanitizeAndSyncWords(e.target.value);
+  const cleaned = formatEpigraphText(e.target.value);
   if (textInput.value !== cleaned) textInput.value = cleaned;
-  renderColumnsUI();
-  renderDialsUI();
-  rebuildScene(false);
+  renderColumnSelectorCircles();
+  renderColumnVisualizer();
+  rebuildScene({ fit: true });
 });
 
-document.getElementById('btn-export').addEventListener('click', () => {
-  renderer.render(scene, camera);
+// --- Esportazione PNG (Tagliato in Base allo Zoom e Angolo della Viewport) & PDF A4 ---
+const pngPopover = document.getElementById('png-export-popover');
+const pngWidthInput = document.getElementById('png-width-input');
+const pngHeightInput = document.getElementById('png-height-input');
+
+document.getElementById('btn-toggle-png').addEventListener('click', (e) => {
+  e.stopPropagation();
+  e.currentTarget.blur();
+  pngPopover.hidden = !pngPopover.hidden;
+});
+
+pngPopover.addEventListener('pointerdown', (e) => e.stopPropagation());
+
+window.addEventListener('pointerdown', () => {
+  if (!pngPopover.hidden) pngPopover.hidden = true;
+  if (!fontDropdownMenu.hidden) {
+    fontDropdownMenu.hidden = true;
+    fontDropdownBtn.setAttribute('aria-expanded', 'false');
+  }
+});
+
+document.querySelectorAll('.preset-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    if (btn.id === 'btn-preset-screen') {
+      pngWidthInput.value = Math.round(viewport.clientWidth * 2);
+      pngHeightInput.value = Math.round(viewport.clientHeight * 2);
+    } else {
+      pngWidthInput.value = btn.dataset.w;
+      pngHeightInput.value = btn.dataset.h;
+    }
+  });
+});
+
+document.getElementById('btn-confirm-png').addEventListener('click', () => {
+  const w = parseInt(pngWidthInput.value, 10) || 2400;
+  const h = parseInt(pngHeightInput.value, 10) || 3000;
+  // autoFitForSheet = false -> preserva esattamente angolazione, pan e zoom della viewport
+  const dataURL = renderHighQualityDataURL(w, h, false);
+
   const link = document.createElement('a');
-  link.download = `type-columns-${state.text.trim().replace(/\s+/g, '_') || 'export'}.png`;
-  link.href = renderer.domElement.toDataURL('image/png');
+  const slug = state.text.trim().replace(/\s+/g, '_') || 'ARCHTYPE';
+  link.download = `${slug}_${w}x${h}.png`;
+  link.href = dataURL;
   link.click();
+  pngPopover.hidden = true;
 });
 
+document.getElementById('btn-export-pdf').addEventListener('click', (e) => {
+  e.currentTarget.blur();
+  pngPopover.hidden = true;
+  exportA4PDF();
+});
+
+// --- Resize Responsive ---
 window.addEventListener('resize', () => {
   const aspect = viewport.clientWidth / Math.max(viewport.clientHeight, 1);
   camera.left = (-FRUSTUM_SIZE * aspect) / 2;
@@ -1557,21 +1746,28 @@ window.addEventListener('resize', () => {
   camera.bottom = -FRUSTUM_SIZE / 2;
   camera.updateProjectionMatrix();
   renderer.setSize(viewport.clientWidth, viewport.clientHeight);
-  renderColumnsUI();
-  renderDialsUI();
-  fitCameraToScene(false);
+
+  renderColumnVisualizer();
 });
 
-function animate() {
+function animate(nowMs = 0) {
   requestAnimationFrame(animate);
+  stepCameraFocusAnim(nowMs);
   controls.update();
+
+  updateColumnSelectorOrbit();
 
   navGizmo.quaternion.copy(camera.quaternion).invert();
   navRenderer.render(navScene, navCamera);
-
   renderer.render(scene, camera);
 }
 
-sanitizeAndSyncWords(state.text);
-loadFontFromUrl(FONT_PRESETS[0]);
+// --- Avvio ---
+formatEpigraphText(state.text);
+textInput.value = state.text;
+applyLanguage();
+syncSlidersUI();
+renderColumnSelectorCircles();
+renderColumnVisualizer();
+loadFontFromUrl(FONT_PRESETS[0].url, FONT_PRESETS[0].name, FONT_PRESETS[1], true);
 animate();
