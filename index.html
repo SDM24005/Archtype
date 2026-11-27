@@ -179,54 +179,63 @@ QUI</textarea>
         </button>
       </div>
 
-      <!-- Pannello Dimensioni PNG Personalizzate -->
-      <div id="png-export-popover" class="export-popover" hidden>
-        <div class="popover-title" data-i18n="customPngTitle">DIMENSIONI PNG (PX)</div>
-        <div class="popover-presets">
-          <button type="button" class="preset-btn" data-w="2000" data-h="2000">1:1</button>
-          <button type="button" class="preset-btn" data-w="2480" data-h="3508">A4</button>
-          <button type="button" class="preset-btn" data-w="3840" data-h="2160">16:9</button>
-          <button type="button" class="preset-btn" id="btn-preset-screen" data-i18n="screen">SCHERMO</button>
-          <button type="button" class="preset-btn active" id="btn-preset-custom" data-i18n="customRatio">CUSTOM</button>
+      <!-- Pannello Esportazione Unificato (PNG / PDF) -->
+      <div id="export-popover" class="export-popover" hidden>
+        <div class="export-format-tabs">
+          <button type="button" class="format-tab-btn active" data-format="png">PNG</button>
+          <button type="button" class="format-tab-btn" data-format="pdf">PDF</button>
         </div>
-        <div class="popover-inputs">
-          <label>
-            <span>W</span>
-            <input type="number" id="png-width-input" min="200" max="6000" step="1" value="2400" />
-          </label>
-          <button type="button" id="btn-lock-ratio" class="ratio-lock-btn" aria-pressed="true" title="BLOCCA PROPORZIONI">
-            <!-- Icona Lucchetto Chiuso -->
-            <svg class="icon-locked" viewBox="0 0 14 16" width="12" height="14" fill="none" stroke="currentColor" stroke-width="1.2">
-              <rect x="2" y="7" width="10" height="8" />
-              <path d="M4.5 7V4.5a2.5 2.5 0 0 1 5 0V7" />
-            </svg>
-            <!-- Icona Lucchetto Aperto -->
-            <svg class="icon-unlocked" viewBox="0 0 14 16" width="12" height="14" fill="none" stroke="currentColor" stroke-width="1.2" hidden>
-              <rect x="2" y="7" width="10" height="8" />
-              <path d="M4.5 7V4.5a2.5 2.5 0 0 1 5 0" />
-            </svg>
+
+        <!-- Opzioni PNG -->
+        <div id="export-panel-png" class="export-panel">
+          <div class="popover-title" data-i18n="customPngTitle">DIMENSIONI PNG (PX)</div>
+          <div class="popover-presets">
+            <button type="button" class="preset-btn" data-w="2000" data-h="2000">1:1</button>
+            <button type="button" class="preset-btn" data-w="2480" data-h="3508">A4</button>
+            <button type="button" class="preset-btn" data-w="3840" data-h="2160">16:9</button>
+            <button type="button" class="preset-btn" id="btn-preset-screen" data-i18n="screen">SCHERMO</button>
+            <button type="button" class="preset-btn active" id="btn-preset-custom" data-i18n="customRatio">CUSTOM</button>
+          </div>
+          <div class="popover-inputs">
+            <label>
+              <span>W</span>
+              <input type="number" id="png-width-input" min="200" max="6000" step="1" value="2400" />
+            </label>
+            <button type="button" id="btn-lock-ratio" class="ratio-lock-btn" aria-pressed="true" title="BLOCCA PROPORZIONI">
+              <svg class="icon-locked" viewBox="0 0 14 16" width="12" height="14" fill="none" stroke="currentColor" stroke-width="1.2">
+                <rect x="2" y="7" width="10" height="8" />
+                <path d="M4.5 7V4.5a2.5 2.5 0 0 1 5 0V7" />
+              </svg>
+              <svg class="icon-unlocked" viewBox="0 0 14 16" width="12" height="14" fill="none" stroke="currentColor" stroke-width="1.2" hidden>
+                <rect x="2" y="7" width="10" height="8" />
+                <path d="M4.5 7V4.5a2.5 2.5 0 0 1 5 0" />
+              </svg>
+            </button>
+            <label>
+              <span>H</span>
+              <input type="number" id="png-height-input" min="200" max="6000" step="1" value="3000" />
+            </label>
+          </div>
+          <button type="button" id="btn-confirm-png" class="popover-action-btn" data-i18n="exportHqPng">
+            ESPORTA PNG HQ
           </button>
-          <label>
-            <span>H</span>
-            <input type="number" id="png-height-input" min="200" max="6000" step="1" value="3000" />
-          </label>
         </div>
-        <button type="button" id="btn-confirm-png" class="popover-action-btn" data-i18n="exportHqPng">
-          ESPORTA PNG HQ
-        </button>
+
+        <!-- Opzioni PDF -->
+        <div id="export-panel-pdf" class="export-panel" hidden>
+          <div class="popover-title" data-i18n="pdfSpecTitle">SCHEDA TECNICA A4 (210 × 297 MM)</div>
+          <button type="button" id="btn-export-pdf" class="popover-action-btn" data-i18n="exportA4Pdf">
+            ESPORTA PDF A4
+          </button>
+        </div>
       </div>
 
-      <!-- Controlli in basso a destra sopra al viewport in negativo -->
+      <!-- Controllo unico Esporta in basso a destra -->
       <div class="viewport-bottom-right blend-negative">
-        <button type="button" id="btn-toggle-png" class="link-btn neg-btn" data-i18n="downloadPng">
-          DOWNLOAD PNG
-        </button>
-        <button type="button" id="btn-export-pdf" class="link-btn neg-btn" data-i18n="downloadPdf">
-          DOWNLOAD PDF
+        <button type="button" id="btn-toggle-export" class="link-btn neg-btn" data-i18n="export">
+          ESPORTA
         </button>
       </div>
-    </main>
-  </div>
 
   <script type="module" src="script.js?v=5"></script>
 </body>

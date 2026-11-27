@@ -84,7 +84,7 @@ body.dark-mode .drop-overlay {
   position: fixed;
   top: 20px;
   left: 0;
-  right: 155px;
+  right: 26px;
   height: 44px;
   z-index: 40;
   pointer-events: none;
@@ -570,10 +570,10 @@ body.dark-mode .drop-overlay {
   color: #000000;
 }
 
-/* Navigatore 3D sopra al viewport in alto a destra */
+/* Navigatore 3D sopra al viewport in alto a destra, allineato ai pannelli (linea rossa) */
 #nav-sphere-wrap {
   position: absolute;
-  top: 22px;
+  top: 96px;
   right: 26px;
   width: 114px;
   height: 114px;
@@ -637,6 +637,45 @@ body.dark-mode .drop-overlay {
 }
 
 .export-popover[hidden] {
+  display: none;
+}
+
+.export-format-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: var(--line-w) solid var(--fg);
+}
+
+.format-tab-btn {
+  height: 29px;
+  background: var(--bg);
+  color: var(--fg);
+  border: none;
+  border-right: var(--line-w) solid var(--fg);
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: background-color 0.12s, color 0.12s;
+}
+
+.format-tab-btn:last-child {
+  border-right: none;
+}
+
+.format-tab-btn:hover,
+.format-tab-btn.active {
+  background: var(--fg);
+  color: var(--bg);
+}
+
+.export-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.export-panel[hidden] {
   display: none;
 }
 

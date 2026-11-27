@@ -37,14 +37,15 @@ const I18N = {
     night: 'NOTTE',
     day: 'GIORNO',
     langSwitch: 'ENG',
-    downloadPng: 'DOWNLOAD PNG',
-    downloadPdf: 'DOWNLOAD PDF',
+    export: 'ESPORTA',
     customPngTitle: 'DIMENSIONI PNG (PX)',
     screen: 'SCHERMO',
     customRatio: 'CUSTOM',
     lockRatioTitle: 'BLOCCA PROPORZIONI',
     unlockRatioTitle: 'SBLOCCA PROPORZIONI',
     exportHqPng: 'ESPORTA PNG HQ',
+    pdfSpecTitle: 'SCHEDA TECNICA A4 (210 × 297 MM)',
+    exportA4Pdf: 'ESPORTA PDF A4',
     navTitle: 'TRASCINA PER RUOTARE • DOPPIO CLICK PER RESET',
     selectorTitle: 'CLICCA PER SELEZIONARE • TRASCINA PER RUOTARE',
     pdfPhrase: 'FRASE',
@@ -70,14 +71,15 @@ const I18N = {
     night: 'NIGHT',
     day: 'DAY',
     langSwitch: 'ITA',
-    downloadPng: 'DOWNLOAD PNG',
-    downloadPdf: 'DOWNLOAD PDF',
+    export: 'EXPORT',
     customPngTitle: 'PNG DIMENSIONS (PX)',
     screen: 'SCREEN',
     customRatio: 'CUSTOM',
     lockRatioTitle: 'LOCK ASPECT RATIO',
     unlockRatioTitle: 'UNLOCK ASPECT RATIO',
     exportHqPng: 'EXPORT HQ PNG',
+    pdfSpecTitle: 'A4 SPECIMEN SHEET (210 × 297 MM)',
+    exportA4Pdf: 'EXPORT A4 PDF',
     navTitle: 'DRAG TO ORBIT • DOUBLE CLICK TO RESET',
     selectorTitle: 'CLICK TO SELECT • DRAG TO ORBIT',
     pdfPhrase: 'PHRASE',
@@ -241,22 +243,23 @@ function makeCircleLine(axis, radius = 0.986) {
   return new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), navHairlineMat);
 }
 
-navGizmo.add(makeCircleLine('xz'), makeCircleLine('xy'), makeCircleLine('yz'));
-
 const axesLinesGeo = new THREE.BufferGeometry().setFromPoints([
   new THREE.Vector3(-0.98, 0, 0), new THREE.Vector3(0.98, 0, 0),
   new THREE.Vector3(0, -0.98, 0), new THREE.Vector3(0, 0.98, 0),
   new THREE.Vector3(0, 0, -0.98), new THREE.Vector3(0, 0, 0.98),
 ]);
 navGizmo.add(new THREE.LineSegments(axesLinesGeo, navHairlineMat));
+navGizmo.add(makeCircleLine('xz'), makeCircleLine('xy'), makeCircleLine('yz'));
+
 const dotFillDefault = 0x000000; // Con mix-blend-mode: difference appare bianco su sfondo chiaro
 const dotStrokeDefault = 0xffffff; // Con mix-blend-mode: difference appare come stroke nero
 
-const dotGeo = new THREE.SphereGeometry(0.105, 24, 24);
-const dotOutlineGeo = new THREE.SphereGeometry(0.132, 24, 24);
+const dotGeo = new THREE.SphereGeometry(0.145, 24, 24);
+const dotOutlineGeo = new THREE.SphereGeometry(0.175, 24, 24);
 
 const navAxisDots = [];
-let hoveredNavDot = null;
+let isNavHovered = false;
+let isNavDragging = false;
 let activeNavDot = null;
 
 [
@@ -286,13 +289,11 @@ let activeNavDot = null;
 });
 
 function updateNavDotsVisuals() {
+  const isHighlighted = isNavHovered || isNavDragging;
   for (const dot of navAxisDots) {
-    const isHighlighted = dot === hoveredNavDot || dot === activeNavDot;
-    // Quando hover o attivo: riempimento e stroke si invertono diventando neri in viewport
     dot.fillMat.color.setHex(isHighlighted ? dotStrokeDefault : dotFillDefault);
     dot.outlineMat.color.setHex(dotStrokeDefault);
   }
-  navWrap.classList.toggle('hover-dot', Boolean(hoveredNavDot));
 }
 
 function syncThemeTo3D() {
@@ -323,28 +324,22 @@ function pickNavDot(clientX, clientY) {
   return navAxisDots.find((d) => d.fillMesh === hits[0].object) || null;
 }
 
-navWrap.addEventListener('pointermove', (e) => {
-  if (activeNavDot) return;
-  const hit = pickNavDot(e.clientX, e.clientY);
-  if (hit !== hoveredNavDot) {
-    hoveredNavDot = hit;
-    updateNavDotsVisuals();
-  }
+navWrap.addEventListener('pointerenter', () => {
+  isNavHovered = true;
+  updateNavDotsVisuals();
 });
 
 navWrap.addEventListener('pointerleave', () => {
-  if (!activeNavDot && hoveredNavDot) {
-    hoveredNavDot = null;
-    updateNavDotsVisuals();
-  }
+  isNavHovered = false;
+  updateNavDotsVisuals();
 });
 
 navWrap.addEventListener('pointerdown', (e) => {
   e.preventDefault();
   cameraFocusAnim = null;
 
+  isNavDragging = true;
   activeNavDot = pickNavDot(e.clientX, e.clientY);
-  hoveredNavDot = activeNavDot;
   updateNavDotsVisuals();
 
   let prevX = e.clientX;
@@ -368,8 +363,7 @@ navWrap.addEventListener('pointerdown', (e) => {
     controls.update();
   };
 
-  const onUp = (ev) => {
-    // Se si è cliccato su un pallino senza trascinare, allinea la camera a quell'asse
+  const onUp = () => {
     if (!dragged && activeNavDot) {
       const axisDir = activeNavDot.group.position.clone().normalize();
       if (Math.abs(axisDir.y) > 0.99) {
@@ -382,8 +376,8 @@ navWrap.addEventListener('pointerdown', (e) => {
       controls.update();
     }
 
+    isNavDragging = false;
     activeNavDot = null;
-    hoveredNavDot = pickNavDot(ev.clientX, ev.clientY);
     updateNavDotsVisuals();
 
     window.removeEventListener('pointermove', onMove);
@@ -1953,8 +1947,11 @@ textInput.addEventListener('input', (e) => {
   rebuildScene({ fit: true });
 });
 
-// --- Esportazione PNG (Proporzione Custom + Lucchetto) & PDF A4 ---
-const pngPopover = document.getElementById('png-export-popover');
+// --- Esportazione Unificata PNG (Proporzione Custom + Lucchetto) & PDF A4 ---
+const exportPopover = document.getElementById('export-popover');
+const exportPanelPng = document.getElementById('export-panel-png');
+const exportPanelPdf = document.getElementById('export-panel-pdf');
+
 const pngWidthInput = document.getElementById('png-width-input');
 const pngHeightInput = document.getElementById('png-height-input');
 const btnLockRatio = document.getElementById('btn-lock-ratio');
@@ -1964,6 +1961,18 @@ const iconUnlocked = btnLockRatio.querySelector('.icon-unlocked');
 
 let isRatioLocked = true;
 let lockedAspectRatio = 2400 / 3000;
+
+// Cambio scheda PNG / PDF
+document.querySelectorAll('.format-tab-btn').forEach((tabBtn) => {
+  tabBtn.addEventListener('click', () => {
+    const format = tabBtn.dataset.format;
+    document.querySelectorAll('.format-tab-btn').forEach((b) => {
+      b.classList.toggle('active', b === tabBtn);
+    });
+    exportPanelPng.hidden = format !== 'png';
+    exportPanelPdf.hidden = format !== 'pdf';
+  });
+});
 
 function updateLockButtonTitle() {
   const dict = I18N[state.lang];
@@ -2021,20 +2030,20 @@ pngHeightInput.addEventListener('input', () => {
   }
 });
 
-document.getElementById('btn-toggle-png').addEventListener('pointerdown', (e) => {
+document.getElementById('btn-toggle-export').addEventListener('pointerdown', (e) => {
   e.stopPropagation();
 });
 
-document.getElementById('btn-toggle-png').addEventListener('click', (e) => {
+document.getElementById('btn-toggle-export').addEventListener('click', (e) => {
   e.stopPropagation();
   e.currentTarget.blur();
-  pngPopover.hidden = !pngPopover.hidden;
+  exportPopover.hidden = !exportPopover.hidden;
 });
 
-pngPopover.addEventListener('pointerdown', (e) => e.stopPropagation());
+exportPopover.addEventListener('pointerdown', (e) => e.stopPropagation());
 
 window.addEventListener('pointerdown', () => {
-  if (!pngPopover.hidden) pngPopover.hidden = true;
+  if (!exportPopover.hidden) exportPopover.hidden = true;
   if (!fontDropdownMenu.hidden) setFontMenuOpen(false);
 });
 
@@ -2043,7 +2052,6 @@ document.querySelectorAll('.preset-btn').forEach((btn) => {
     setActivePresetButton(btn);
 
     if (btn.id === 'btn-preset-custom') {
-      // Sblocca le proporzioni per consentire l'inserimento di una proporzione custom
       setRatioLocked(false);
       pngWidthInput.focus();
       pngWidthInput.select();
@@ -2079,12 +2087,12 @@ document.getElementById('btn-confirm-png').addEventListener('click', () => {
   link.download = `${slug}_${w}x${h}.png`;
   link.href = dataURL;
   link.click();
-  pngPopover.hidden = true;
+  exportPopover.hidden = true;
 });
 
 document.getElementById('btn-export-pdf').addEventListener('click', (e) => {
   e.currentTarget.blur();
-  pngPopover.hidden = true;
+  exportPopover.hidden = true;
   exportA4PDF();
 });
 
