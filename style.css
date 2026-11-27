@@ -50,10 +50,39 @@ html, body {
   overflow: hidden;
 }
 
+/* --- Overlay Drag & Drop Font --- */
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.88);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+body.dark-mode .drop-overlay {
+  background: rgba(0, 0, 0, 0.88);
+}
+
+.drop-overlay[hidden] {
+  display: none;
+}
+
+.drop-overlay-box {
+  border: var(--line-w) solid var(--fg);
+  background: var(--bg);
+  color: var(--fg);
+  padding: 24px 36px;
+  font-size: 14px;
+  letter-spacing: 0.06em;
+}
+
 /* --- Titolo in Alto a Sinistra (A    RCH  T   Y   PE) --- */
 #top-header {
   position: fixed;
-  top: 30px;
+  top: 20px;
   left: 0;
   right: 155px;
   height: 44px;
@@ -249,8 +278,8 @@ html, body {
   transition: background-color 0.1s, color 0.1s;
 }
 
-.font-option:last-child {
-  border-bottom: none;
+.font-option[hidden] {
+  display: none;
 }
 
 .font-option:hover,
@@ -587,7 +616,7 @@ html, body {
   position: absolute;
   right: 26px;
   bottom: 60px;
-  width: 256px;
+  width: 288px;
   background: var(--bg);
   color: var(--fg);
   border: var(--line-w) solid var(--fg);
@@ -610,8 +639,8 @@ html, body {
 
 .popover-presets {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 5px;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
 }
 
 .preset-btn {
@@ -619,14 +648,15 @@ html, body {
   color: var(--fg);
   border: var(--line-w) solid var(--fg);
   font-family: var(--font-ui);
-  font-size: 11px;
+  font-size: 10.5px;
   padding: 4px 2px;
   cursor: pointer;
   transition: background-color 0.12s, color 0.12s;
 }
 
 .preset-btn:hover,
-.preset-btn:active {
+.preset-btn:active,
+.preset-btn.active {
   background: var(--fg);
   color: var(--bg);
 }
@@ -659,8 +689,27 @@ html, body {
   user-select: text;
 }
 
-.dim-sep {
-  font-size: 13px;
+.ratio-lock-btn {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  background: var(--bg);
+  color: var(--fg);
+  border: var(--line-w) solid var(--fg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.12s, color 0.12s;
+}
+
+.ratio-lock-btn[aria-pressed="true"] {
+  background: var(--fg);
+  color: var(--bg);
+}
+
+.ratio-lock-btn svg[hidden] {
+  display: none;
 }
 
 .popover-action-btn {

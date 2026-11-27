@@ -7,12 +7,12 @@ const FRUSTUM_SIZE = 32;
 const MAX_CACHE_ENTRIES = 50;
 const DEFAULT_CAM_DIR = new THREE.Vector3(24, 14, 26).normalize();
 
-// Percorsi Font Preset: sostituisci gli URL dei 3 font con i file specifici nella cartella ./Font/
+// Percorsi Font Preset
 const FONT_PRESETS = [
   { name: 'GAISYR', url: './Font/ABCGaisyrTrial-Book.otf' },
-  { name: 'WALTER', url: './Font/ABCWalterNeueTrial-Bold.otf' }, // es. './Font/WalterBold.otf'
-  { name: 'CONNECT', url: './Font/ABCConnectTrial-Nail.otf' },     // es. './Font/Connect.otf'
-  { name: 'HONEYMOON', url: './Font/ABCHoneymoonTrial-Bold.otf' },   // es. './Font/Honeymoon.otf'
+  { name: 'WALTER', url: './Font/ABCWalterNeueTrial-Bold.otf' },
+  { name: 'CONNECT', url: './Font/ABCConnectTrial-Nail.otf' },
+  { name: 'GROW', url: './Font/ABCGrowTrial-DF.otf' },
 ];
 
 const FONT_FALLBACK_URL =
@@ -21,6 +21,7 @@ const FONT_FALLBACK_URL =
 const I18N = {
   it: {
     uploadFont: 'UPLOAD FONT',
+    dropFontHint: 'RILASCIA QUI IL FILE FONT (.OTF / .TTF / .WOFF)',
     placeholder: 'SCRIVI QUI',
     height: 'ALTEZZA',
     width: 'LARGHEZZA',
@@ -40,6 +41,9 @@ const I18N = {
     downloadPdf: 'DOWNLOAD PDF',
     customPngTitle: 'DIMENSIONI PNG (PX)',
     screen: 'SCHERMO',
+    customRatio: 'CUSTOM',
+    lockRatioTitle: 'BLOCCA PROPORZIONI',
+    unlockRatioTitle: 'SBLOCCA PROPORZIONI',
     exportHqPng: 'ESPORTA PNG HQ',
     navTitle: 'TRASCINA PER RUOTARE • DOPPIO CLICK PER RESET',
     selectorTitle: 'CLICCA PER SELEZIONARE • TRASCINA PER RUOTARE',
@@ -50,6 +54,7 @@ const I18N = {
   },
   en: {
     uploadFont: 'UPLOAD FONT',
+    dropFontHint: 'DROP FONT FILE HERE (.OTF / .TTF / .WOFF)',
     placeholder: 'TYPE HERE',
     height: 'HEIGHT',
     width: 'WIDTH',
@@ -69,6 +74,9 @@ const I18N = {
     downloadPdf: 'DOWNLOAD PDF',
     customPngTitle: 'PNG DIMENSIONS (PX)',
     screen: 'SCREEN',
+    customRatio: 'CUSTOM',
+    lockRatioTitle: 'LOCK ASPECT RATIO',
+    unlockRatioTitle: 'UNLOCK ASPECT RATIO',
     exportHqPng: 'EXPORT HQ PNG',
     navTitle: 'DRAG TO ORBIT • DOUBLE CLICK TO RESET',
     selectorTitle: 'CLICK TO SELECT • DRAG TO ORBIT',
@@ -98,7 +106,7 @@ const customFonts = [];
 const glyphCache = new Map();
 const wordMeshCache = new Map();
 const columnCircleEls = [];
-let cameraFocusAnim = null; // { startTheta, targetTheta, startTime, duration }
+let cameraFocusAnim = null;
 
 const btnResetGlobal = document.getElementById('btn-reset-global');
 const btnResetColumn = document.getElementById('btn-reset-column');
@@ -148,6 +156,7 @@ function applyLanguage() {
   document.getElementById('btn-lang-toggle').textContent = dict.langSwitch;
   document.getElementById('nav-sphere-wrap').title = dict.navTitle;
   document.getElementById('circle-orbit-stage').title = dict.selectorTitle;
+  updateLockButtonTitle();
 }
 
 // --- Setup Three.js (Viewport Smarginato Full-Bleed) ---
@@ -352,7 +361,7 @@ function stepCameraFocusAnim(nowMs) {
   if (t >= 1) cameraFocusAnim = null;
 }
 
-// --- Formattazione Testo in Epigrafe (Max 4 Parole, Solo Maiuscolo, Almeno 1 Colonna Selezionata) ---
+// --- Formattazione Testo in Epigrafe ---
 const distanceSliderItem = document.getElementById('slider-distance-item');
 
 function updateDistanceSliderVisibility() {
@@ -1147,7 +1156,7 @@ function exportA4PDF() {
   doc.save(`${slug}_A4.pdf`);
 }
 
-// --- COLONNA 2: Selettore Colonne (Almeno 1 Selezionata + Trascinamento per Ruotare Solo sull'Asse Verticale) ---
+// --- COLONNA 2: Selettore Colonne ---
 const circleOrbitStage = document.getElementById('circle-orbit-stage');
 const columnCirclesEl = document.getElementById('column-circles');
 const colVisualizerBlock = document.getElementById('col-visualizer-block');
@@ -1339,7 +1348,6 @@ function renderColumnVisualizer() {
     return el;
   };
 
-  // Linea di base inferiore
   const baseLineSpan = Math.min(boxW * 0.46, maxHalfW + 18);
   columnEditorSvg.appendChild(
     makeSvgEl('line', {
@@ -1352,7 +1360,6 @@ function renderColumnVisualizer() {
     })
   );
 
-  // Segmenti laterali: traslano solo in X (destra/sinistra)
   for (let sIdx = 0; sIdx < leftEdgePts.length - 1; sIdx++) {
     const affectedIndices =
       m === 1 ? [0] : [leftEdgePts[sIdx].letterIdx, leftEdgePts[sIdx + 1].letterIdx];
@@ -1387,7 +1394,6 @@ function renderColumnVisualizer() {
     });
   }
 
-  // Linee orizzontali: traslano solo in Y (su/giù)
   for (let idx = 0; idx < leftEdgePts.length; idx++) {
     const lp = leftEdgePts[idx];
     const rp = rightEdgePts[idx];
@@ -1419,7 +1425,6 @@ function renderColumnVisualizer() {
     columnEditorSvg.appendChild(hGroup);
   }
 
-  // Nodi circolari agli estremi: traslano sia in X che in Y
   for (let idx = 0; idx < leftEdgePts.length; idx++) {
     const lp = leftEdgePts[idx];
     const rp = rightEdgePts[idx];
@@ -1658,10 +1663,11 @@ document.getElementById('btn-lang-toggle').addEventListener('click', (e) => {
   applyLanguage();
 });
 
-// --- Menù Selezione Font Custom ---
+// --- Menù Selezione Font Custom (Senza duplicati e chiusura sul box superiore) ---
 const fontDropdownBtn = document.getElementById('font-dropdown-btn');
 const fontDropdownMenu = document.getElementById('font-dropdown-menu');
 const fontSelectedLabel = document.getElementById('font-selected-label');
+const dropOverlay = document.getElementById('drop-overlay');
 
 function setLoadedFont(font, name, initialFit = false) {
   glyphCache.clear();
@@ -1687,17 +1693,43 @@ function loadFontFromUrl(url, name, fallbackUrl = null, initialFit = false) {
   });
 }
 
+function refreshFontMenuVisibility() {
+  const options = Array.from(fontDropdownMenu.querySelectorAll('.font-option'));
+  const visibleOptions = [];
+
+  options.forEach((btn) => {
+    const isSelected = btn.classList.contains('active');
+    btn.hidden = isSelected;
+    btn.style.borderBottom = '';
+    if (!isSelected) visibleOptions.push(btn);
+  });
+
+  if (visibleOptions.length > 0) {
+    visibleOptions[visibleOptions.length - 1].style.borderBottom = 'none';
+  }
+}
+
 function setActiveFontOption(targetBtn) {
   fontDropdownMenu.querySelectorAll('.font-option').forEach((btn) => {
     btn.classList.toggle('active', btn === targetBtn);
   });
+  refreshFontMenuVisibility();
 }
+
+function setFontMenuOpen(open) {
+  fontDropdownMenu.hidden = !open;
+  fontDropdownBtn.setAttribute('aria-expanded', String(open));
+}
+
+// Impedisce a pointerdown sul trigger di chiudere prima che scatti il click
+fontDropdownBtn.addEventListener('pointerdown', (e) => {
+  e.stopPropagation();
+});
 
 fontDropdownBtn.addEventListener('click', (e) => {
   e.stopPropagation();
-  const isOpen = !fontDropdownMenu.hidden;
-  fontDropdownMenu.hidden = isOpen;
-  fontDropdownBtn.setAttribute('aria-expanded', String(!isOpen));
+  const isCurrentlyOpen = !fontDropdownMenu.hidden;
+  setFontMenuOpen(!isCurrentlyOpen);
 });
 
 fontDropdownMenu.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -1707,8 +1739,7 @@ fontDropdownMenu.addEventListener('click', (e) => {
   if (!optBtn) return;
 
   setActiveFontOption(optBtn);
-  fontDropdownMenu.hidden = true;
-  fontDropdownBtn.setAttribute('aria-expanded', 'false');
+  setFontMenuOpen(false);
 
   if (optBtn.dataset.custom !== undefined) {
     const idx = parseInt(optBtn.dataset.custom, 10);
@@ -1720,30 +1751,86 @@ fontDropdownMenu.addEventListener('click', (e) => {
   }
 });
 
-document.getElementById('font-upload').addEventListener('change', (e) => {
-  const file = e.target.files[0];
+// Caricamento Font da File (Input o Drag & Drop)
+function handleFontFile(file) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = () => {
     try {
       const parsed = window.opentype.parse(reader.result);
-      const cleanName = file.name.replace(/\.[^/.]+$/, '').toUpperCase().slice(0, 16) || `FONT ${customFonts.length + 1}`;
-      const customIdx = customFonts.push({ font: parsed, name: cleanName }) - 1;
+      const cleanName =
+        file.name.replace(/\.[^/.]+$/, '').toUpperCase().slice(0, 16) ||
+        `FONT ${customFonts.length + 1}`;
 
-      const optBtn = document.createElement('button');
-      optBtn.type = 'button';
-      optBtn.className = 'font-option';
-      optBtn.dataset.custom = String(customIdx);
-      optBtn.textContent = cleanName;
-      fontDropdownMenu.appendChild(optBtn);
+      // Evita duplicati se lo stesso font viene ricaricato
+      let existingBtn = Array.from(fontDropdownMenu.querySelectorAll('.font-option')).find(
+        (btn) => btn.textContent === cleanName
+      );
 
-      setActiveFontOption(optBtn);
+      if (existingBtn && existingBtn.dataset.custom !== undefined) {
+        const existingIdx = parseInt(existingBtn.dataset.custom, 10);
+        customFonts[existingIdx].font = parsed;
+      } else if (!existingBtn) {
+        const customIdx = customFonts.push({ font: parsed, name: cleanName }) - 1;
+        existingBtn = document.createElement('button');
+        existingBtn.type = 'button';
+        existingBtn.className = 'font-option';
+        existingBtn.dataset.custom = String(customIdx);
+        existingBtn.textContent = cleanName;
+        fontDropdownMenu.appendChild(existingBtn);
+      }
+
+      setActiveFontOption(existingBtn);
+      setFontMenuOpen(false);
       setLoadedFont(parsed, cleanName);
     } catch {
       // Font non valido
     }
   };
   reader.readAsArrayBuffer(file);
+}
+
+document.getElementById('font-upload').addEventListener('change', (e) => {
+  handleFontFile(e.target.files[0]);
+  e.target.value = '';
+});
+
+// Drag & Drop globale sulla finestra
+let dragCounter = 0;
+
+function hasFilePayload(e) {
+  return e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
+}
+
+window.addEventListener('dragenter', (e) => {
+  if (!hasFilePayload(e)) return;
+  e.preventDefault();
+  dragCounter++;
+  dropOverlay.hidden = false;
+});
+
+window.addEventListener('dragover', (e) => {
+  if (!hasFilePayload(e)) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+});
+
+window.addEventListener('dragleave', (e) => {
+  if (!hasFilePayload(e)) return;
+  e.preventDefault();
+  dragCounter = Math.max(0, dragCounter - 1);
+  if (dragCounter === 0) dropOverlay.hidden = true;
+});
+
+window.addEventListener('drop', (e) => {
+  if (!hasFilePayload(e)) return;
+  e.preventDefault();
+  dragCounter = 0;
+  dropOverlay.hidden = true;
+
+  const files = Array.from(e.dataTransfer.files || []);
+  const fontFile = files.find((f) => /\.(otf|ttf|woff)$/i.test(f.name)) || files[0];
+  if (fontFile) handleFontFile(fontFile);
 });
 
 // --- Eventi Box di Testo in Epigrafe ---
@@ -1780,10 +1867,77 @@ textInput.addEventListener('input', (e) => {
   rebuildScene({ fit: true });
 });
 
-// --- Esportazione PNG & PDF A4 ---
+// --- Esportazione PNG (Proporzione Custom + Lucchetto) & PDF A4 ---
 const pngPopover = document.getElementById('png-export-popover');
 const pngWidthInput = document.getElementById('png-width-input');
 const pngHeightInput = document.getElementById('png-height-input');
+const btnLockRatio = document.getElementById('btn-lock-ratio');
+const btnPresetCustom = document.getElementById('btn-preset-custom');
+const iconLocked = btnLockRatio.querySelector('.icon-locked');
+const iconUnlocked = btnLockRatio.querySelector('.icon-unlocked');
+
+let isRatioLocked = true;
+let lockedAspectRatio = 2400 / 3000;
+
+function updateLockButtonTitle() {
+  const dict = I18N[state.lang];
+  btnLockRatio.title = isRatioLocked ? dict.lockRatioTitle : dict.unlockRatioTitle;
+}
+
+function setRatioLocked(locked) {
+  isRatioLocked = locked;
+  btnLockRatio.setAttribute('aria-pressed', String(locked));
+  iconLocked.hidden = !locked;
+  iconUnlocked.hidden = locked;
+  if (locked) {
+    const w = Math.max(200, parseFloat(pngWidthInput.value) || 2400);
+    const h = Math.max(200, parseFloat(pngHeightInput.value) || 3000);
+    lockedAspectRatio = w / h;
+  }
+  updateLockButtonTitle();
+}
+
+function setActivePresetButton(activeBtn) {
+  document.querySelectorAll('.preset-btn').forEach((b) => {
+    b.classList.toggle('active', b === activeBtn);
+  });
+}
+
+btnLockRatio.addEventListener('click', () => {
+  setRatioLocked(!isRatioLocked);
+});
+
+pngWidthInput.addEventListener('input', () => {
+  const w = parseFloat(pngWidthInput.value);
+  if (!Number.isFinite(w) || w <= 0) return;
+
+  if (isRatioLocked) {
+    const newH = THREE.MathUtils.clamp(Math.round(w / lockedAspectRatio), 200, 6000);
+    pngHeightInput.value = newH;
+  } else {
+    const h = Math.max(200, parseFloat(pngHeightInput.value) || 3000);
+    lockedAspectRatio = w / h;
+    setActivePresetButton(btnPresetCustom);
+  }
+});
+
+pngHeightInput.addEventListener('input', () => {
+  const h = parseFloat(pngHeightInput.value);
+  if (!Number.isFinite(h) || h <= 0) return;
+
+  if (isRatioLocked) {
+    const newW = THREE.MathUtils.clamp(Math.round(h * lockedAspectRatio), 200, 6000);
+    pngWidthInput.value = newW;
+  } else {
+    const w = Math.max(200, parseFloat(pngWidthInput.value) || 2400);
+    lockedAspectRatio = w / h;
+    setActivePresetButton(btnPresetCustom);
+  }
+});
+
+document.getElementById('btn-toggle-png').addEventListener('pointerdown', (e) => {
+  e.stopPropagation();
+});
 
 document.getElementById('btn-toggle-png').addEventListener('click', (e) => {
   e.stopPropagation();
@@ -1795,27 +1949,43 @@ pngPopover.addEventListener('pointerdown', (e) => e.stopPropagation());
 
 window.addEventListener('pointerdown', () => {
   if (!pngPopover.hidden) pngPopover.hidden = true;
-  if (!fontDropdownMenu.hidden) {
-    fontDropdownMenu.hidden = true;
-    fontDropdownBtn.setAttribute('aria-expanded', 'false');
-  }
+  if (!fontDropdownMenu.hidden) setFontMenuOpen(false);
 });
 
 document.querySelectorAll('.preset-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
-    if (btn.id === 'btn-preset-screen') {
-      pngWidthInput.value = Math.round(viewport.clientWidth * 2);
-      pngHeightInput.value = Math.round(viewport.clientHeight * 2);
-    } else {
-      pngWidthInput.value = btn.dataset.w;
-      pngHeightInput.value = btn.dataset.h;
+    setActivePresetButton(btn);
+
+    if (btn.id === 'btn-preset-custom') {
+      // Sblocca le proporzioni per consentire l'inserimento di una proporzione custom
+      setRatioLocked(false);
+      pngWidthInput.focus();
+      pngWidthInput.select();
+      return;
     }
+
+    let w, h;
+    if (btn.id === 'btn-preset-screen') {
+      w = Math.max(200, Math.round(viewport.clientWidth * 2));
+      h = Math.max(200, Math.round(viewport.clientHeight * 2));
+    } else {
+      w = parseInt(btn.dataset.w, 10);
+      h = parseInt(btn.dataset.h, 10);
+    }
+
+    pngWidthInput.value = w;
+    pngHeightInput.value = h;
+    lockedAspectRatio = w / h;
+    setRatioLocked(true);
   });
 });
 
 document.getElementById('btn-confirm-png').addEventListener('click', () => {
-  const w = parseInt(pngWidthInput.value, 10) || 2400;
-  const h = parseInt(pngHeightInput.value, 10) || 3000;
+  const w = THREE.MathUtils.clamp(parseInt(pngWidthInput.value, 10) || 2400, 200, 6000);
+  const h = THREE.MathUtils.clamp(parseInt(pngHeightInput.value, 10) || 3000, 200, 6000);
+  pngWidthInput.value = w;
+  pngHeightInput.value = h;
+
   const dataURL = renderHighQualityDataURL(w, h, false);
 
   const link = document.createElement('a');
@@ -1858,6 +2028,8 @@ function animate(nowMs = 0) {
 }
 
 // --- Avvio ---
+refreshFontMenuVisibility();
+setRatioLocked(true);
 formatEpigraphText(state.text);
 textInput.value = state.text;
 state.selectedColIdx = state.words.length > 0 ? 0 : null;
@@ -1869,8 +2041,9 @@ renderColumnVisualizer();
 loadFontFromUrl(FONT_PRESETS[0].url, FONT_PRESETS[0].name, FONT_FALLBACK_URL, true);
 animate();
 
-// Attiva subito la digitazione nel box di testo all'apertura della pagina
+// Attiva subito la digitazione con il cursore lampeggiante alla fine senza evidenziare in blu
 requestAnimationFrame(() => {
   textInput.focus();
-  textInput.select();
+  const len = textInput.value.length;
+  textInput.setSelectionRange(len, len);
 });

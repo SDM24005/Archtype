@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ARCHTYPE — 3D Type Columns</title>
-  <link rel="stylesheet" href="style.css?v=4" />
+  <link rel="stylesheet" href="style.css?v=5" />
   <script src="https://cdn.jsdelivr.net/npm/opentype.js@1.3.4/dist/opentype.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
   <script type="importmap">
@@ -18,6 +18,11 @@
 </head>
 <body>
   <div id="app">
+    <!-- Overlay Drag & Drop Font -->
+    <div id="drop-overlay" class="drop-overlay" hidden>
+      <div class="drop-overlay-box" data-i18n="dropFontHint">RILASCIA QUI IL FILE FONT (.OTF / .TTF / .WOFF)</div>
+    </div>
+
     <!-- Titolo in alto a sinistra formattato come nella reference: A    RCH  T   Y   PE -->
     <header id="top-header" aria-label="ARCHTYPE">
       <div id="archtype-title">
@@ -48,10 +53,10 @@
               </svg>
             </button>
             <div class="font-dropdown-menu" id="font-dropdown-menu" hidden>
-              <button type="button" class="font-option active" data-preset="0">GAISYR</button>
+              <button type="button" class="font-option active" data-preset="0" hidden>GAISYR</button>
               <button type="button" class="font-option" data-preset="1">WALTER</button>
               <button type="button" class="font-option" data-preset="2">CONNECT</button>
-              <button type="button" class="font-option" data-preset="3">HONEYMOON</button>
+              <button type="button" class="font-option" data-preset="3">GROW</button>
             </div>
           </div>
         </div>
@@ -182,16 +187,28 @@ QUI</textarea>
           <button type="button" class="preset-btn" data-w="2480" data-h="3508">A4</button>
           <button type="button" class="preset-btn" data-w="3840" data-h="2160">16:9</button>
           <button type="button" class="preset-btn" id="btn-preset-screen" data-i18n="screen">SCHERMO</button>
+          <button type="button" class="preset-btn active" id="btn-preset-custom" data-i18n="customRatio">CUSTOM</button>
         </div>
         <div class="popover-inputs">
           <label>
             <span>W</span>
-            <input type="number" id="png-width-input" min="200" max="6000" step="10" value="2400" />
+            <input type="number" id="png-width-input" min="200" max="6000" step="1" value="2400" />
           </label>
-          <span class="dim-sep">×</span>
+          <button type="button" id="btn-lock-ratio" class="ratio-lock-btn" aria-pressed="true" title="BLOCCA PROPORZIONI">
+            <!-- Icona Lucchetto Chiuso -->
+            <svg class="icon-locked" viewBox="0 0 14 16" width="12" height="14" fill="none" stroke="currentColor" stroke-width="1.2">
+              <rect x="2" y="7" width="10" height="8" />
+              <path d="M4.5 7V4.5a2.5 2.5 0 0 1 5 0V7" />
+            </svg>
+            <!-- Icona Lucchetto Aperto -->
+            <svg class="icon-unlocked" viewBox="0 0 14 16" width="12" height="14" fill="none" stroke="currentColor" stroke-width="1.2" hidden>
+              <rect x="2" y="7" width="10" height="8" />
+              <path d="M4.5 7V4.5a2.5 2.5 0 0 1 5 0" />
+            </svg>
+          </button>
           <label>
             <span>H</span>
-            <input type="number" id="png-height-input" min="200" max="6000" step="10" value="3000" />
+            <input type="number" id="png-height-input" min="200" max="6000" step="1" value="3000" />
           </label>
         </div>
         <button type="button" id="btn-confirm-png" class="popover-action-btn" data-i18n="exportHqPng">
@@ -211,6 +228,6 @@ QUI</textarea>
     </main>
   </div>
 
-  <script type="module" src="script.js?v=4"></script>
+  <script type="module" src="script.js?v=5"></script>
 </body>
 </html>
