@@ -1419,7 +1419,7 @@ function renderColumnVisualizer() {
 
   const fgColor = state.darkMode ? '#ffffff' : '#111111';
   const cx = boxW * 0.5;
-  const baselineY = boxH - 12;
+  const baselineY = boxH - 32;
   const availH = Math.max(40, baselineY - 14);
   const maxHalfW = Math.max(28, boxW * 0.42);
   const baseHalfW = Math.min(34, maxHalfW * 0.56);

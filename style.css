@@ -331,14 +331,14 @@ body.dark-mode .drop-overlay {
 }
 
 /* 7 Slider Globali: allineati dall'alto con spazio bilanciato */
+/* 7 Slider Globali: distribuiti uniformemente fino alla quota intermedia */
 .sliders-section {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;
-  gap: clamp(14px, calc(12.2vh - 76px), 58px);
-  padding: clamp(18px, calc(9.5vh - 46px), 56px) 4px 8px 4px;
+  justify-content: space-between;
+  padding: 20px 4px 24px 4px;
 }
 
 .slider-item {
@@ -350,7 +350,9 @@ body.dark-mode .drop-overlay {
 }
 
 .slider-item[hidden] {
-  display: none;
+  display: flex;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .slider-label {
