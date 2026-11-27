@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3D Type Columns — Studio</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/opentype.js@1.3.4/dist/opentype.min.js"></script>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="app">
+    <!-- Pannello Sinistro -->
+    <aside id="editor-panel">
+      <!-- 1. Selettore Font -->
+      <header class="font-bar">
+        <div class="font-options" id="font-selector">
+          <button type="button" class="font-btn active" data-font="0" style="font-family: 'Inter', sans-serif; font-weight: 700;">Font 1</button>
+          <button type="button" class="font-btn" data-font="1" style="font-family: 'Playfair Display', Georgia, serif; font-weight: 700;">Font 2</button>
+          <button type="button" class="font-btn" data-font="2" style="font-family: 'Space Mono', monospace; font-weight: 700;">Font 3</button>
+        </div>
+        <div class="font-meta">
+          <span id="status-badge">Caricamento...</span>
+          <label class="upload-mini" title="Carica font (.ttf / .otf / .woff)">
+            +
+            <input id="font-upload" type="file" accept=".ttf,.otf,.woff" hidden />
+          </label>
+        </div>
+      </header>
+
+      <!-- 2. Box di Testo (max 5 parole, max 15 lettere/parola) -->
+      <section class="text-bar">
+        <textarea id="text-input" rows="2" placeholder="Scrivi fino a 5 parole..." autocomplete="off" spellcheck="false">TYPE COLUMN STUDIO</textarea>
+        <div class="text-counter" id="text-counter">3/5 parole</div>
+      </section>
+
+      <!-- 3. Area Colonne + Controlli Globali Altezza/Larghezza -->
+      <section class="columns-workspace">
+        <div class="global-rail">
+          <!-- Blocco Altezza: Toggle Altezza Uguale + Toggle Altezza Globale + Slider -->
+          <div class="rail-block">
+            <button type="button" id="toggle-equal-height" class="shape-toggle red-toggle" title="Altezza Colonne Uguale (ignora numero lettere)">
+              <svg viewBox="0 0 44 44" width="38" height="38">
+                <polygon class="shape-fill" points="22,2 42,22 22,42 2,22" />
+                <g class="chain-icon" fill="none" stroke-width="2" stroke-linecap="square">
+                  <line x1="14" y1="14.5" x2="30" y2="14.5" />
+                  <line x1="14" y1="29.5" x2="30" y2="29.5" />
+                  <line x1="17" y1="14.5" x2="17" y2="29.5" />
+                  <line x1="22" y1="14.5" x2="22" y2="29.5" />
+                  <line x1="27" y1="14.5" x2="27" y2="29.5" />
+                </g>
+              </svg>
+            </button>
+
+            <button type="button" id="toggle-global-height" class="shape-toggle red-toggle" title="Altezza Globale">
+              <svg viewBox="0 0 44 44" width="38" height="38">
+                <polygon class="shape-fill" points="22,2 42,22 22,42 2,22" />
+                <g class="chain-icon" fill="none" stroke-width="2.2" stroke-linecap="round">
+                  <rect x="18.5" y="12" width="7" height="10" rx="3.5" />
+                  <rect x="18.5" y="22" width="7" height="10" rx="3.5" />
+                </g>
+              </svg>
+            </button>
+
+            <div id="global-height-slider-wrap" class="v-slider-wrap" hidden>
+              <div id="global-height-slider" class="v-slider" title="Altezza Globale Colonne (Alto = Basso, Basso = Alto)">
+                <div class="v-track"></div>
+                <div class="v-thumb" id="global-height-thumb"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Toggle Larghezza Globale (Triangolo Blu) -->
+          <div class="rail-block">
+            <button type="button" id="toggle-global-width" class="shape-toggle blue-toggle" title="Larghezza Globale">
+              <svg viewBox="0 0 44 42" width="38" height="36">
+                <polygon class="shape-fill" points="22,3 42,39 2,39" />
+                <g class="chain-icon" fill="none" stroke-width="2.1" stroke-linecap="round">
+                  <rect x="18.8" y="16" width="6.4" height="8.5" rx="3.2" />
+                  <rect x="18.8" y="24" width="6.4" height="8.5" rx="3.2" />
+                </g>
+              </svg>
+            </button>
+
+            <div id="global-width-controls" class="w-controls-wrap" hidden>
+              <div id="global-width-slider" class="h-slider" title="Larghezza Globale">
+                <div class="h-track"></div>
+                <div class="h-thumb" id="global-width-thumb"></div>
+              </div>
+              <div id="global-entasi-widget" class="entasi-widget" title="Entasi (Profilo Colonna)">
+                <svg viewBox="0 0 48 66" width="44" height="60">
+                  <polygon id="entasi-poly" points="14,6 34,6 34,33 34,60 14,60 14,33" fill="none" stroke="currentColor" stroke-width="1.3" />
+                  <polygon id="entasi-tri-l" class="entasi-tri" points="8,33 13,29.5 13,36.5" stroke-width="1.2" />
+                  <polygon id="entasi-tri-r" class="entasi-tri" points="40,33 35,29.5 35,36.5" stroke-width="1.2" />
+                </svg>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Area Colonne Interattive -->
+        <div class="columns-canvas-wrap" id="columns-canvas-wrap">
+          <svg id="columns-svg" preserveAspectRatio="xMinYMin meet"></svg>
+        </div>
+      </section>
+
+      <!-- 4. Riga Diale di Rotazione -->
+      <section class="dials-workspace">
+        <div class="global-rail dial-rail">
+          <button type="button" id="toggle-global-rot" class="shape-toggle orange-toggle" title="Rotazione Globale">
+            <svg viewBox="0 0 42 42" width="36" height="36">
+              <circle class="shape-fill" cx="21" cy="21" r="18" />
+              <g class="chain-icon" fill="none" stroke-width="2.2" stroke-linecap="round">
+                <rect x="17.5" y="11" width="7" height="10" rx="3.5" />
+                <rect x="17.5" y="21" width="7" height="10" rx="3.5" />
+              </g>
+            </svg>
+          </button>
+        </div>
+        <div class="dials-canvas-wrap" id="dials-canvas-wrap">
+          <svg id="dials-svg" preserveAspectRatio="xMinYMid meet"></svg>
+        </div>
+      </section>
+
+      <!-- 5. Barra Inferiore: Distanza Colonne | Densità Fogli | Spessore Fogli -->
+      <footer class="bottom-bar" id="bottom-bar">
+        <!-- Distanza tra colonne (nascosto se c'è 1 sola parola) -->
+        <div class="bottom-cell" id="cluster-dist-control" title="Trascina verso l'esterno per aumentare la distanza tra colonne">
+          <svg viewBox="0 0 74 74" width="64" height="64">
+            <circle class="cluster-outer" cx="37" cy="37" r="32" stroke-width="1.2" />
+            <polygon id="cluster-tri" points="37,27 28,43 46,43" fill="none" stroke-width="1.2" />
+            <circle id="cluster-dot-0" class="cluster-dot" cx="37" cy="27" r="4.5" stroke-width="1.4" />
+            <circle id="cluster-dot-1" class="cluster-dot" cx="28" cy="43" r="4.5" stroke-width="1.4" />
+            <circle id="cluster-dot-2" class="cluster-dot" cx="46" cy="43" r="4.5" stroke-width="1.4" />
+          </svg>
+        </div>
+
+        <!-- Densità (6 barre progressive) -->
+        <div class="bottom-cell" id="density-control" title="Trascina per regolare il numero di fogli">
+          <svg viewBox="0 0 116 74" width="106" height="64" id="density-svg">
+            <rect class="d-bar" data-idx="0" x="8"  y="52" width="10" height="14" />
+            <rect class="d-bar" data-idx="1" x="26" y="44" width="10" height="22" />
+            <rect class="d-bar" data-idx="2" x="44" y="36" width="10" height="30" />
+            <rect class="d-bar" data-idx="3" x="62" y="28" width="10" height="38" />
+            <rect class="d-bar" data-idx="4" x="80" y="20" width="10" height="46" />
+            <rect class="d-bar" data-idx="5" x="98" y="12" width="10" height="54" />
+          </svg>
+        </div>
+
+        <!-- Spessore fogli (Cubo estruso) -->
+        <div class="bottom-cell" id="thickness-control" title="Trascina per aumentare lo spessore dei fogli">
+          <svg viewBox="0 0 78 74" width="70" height="64">
+            <polygon id="cube-side-r" points="48,14 60,24 60,62 48,52" stroke-width="1.3" />
+            <polygon id="cube-side-b" points="10,52 48,52 60,62 22,62" stroke-width="1.3" />
+            <rect class="cube-front" x="10" y="14" width="38" height="38" stroke-width="1.4" />
+          </svg>
+        </div>
+      </footer>
+    </aside>
+
+    <!-- Viewport 3D Destro -->
+    <main id="viewport">
+      <!-- Toggle Dark Mode & Modalità Senza Colori (in alto a sinistra della viewport) -->
+      <div class="viewport-top-left">
+        <button type="button" id="btn-dark-mode" class="vp-toggle-btn" title="Inverti Bianco/Nero (Dark Mode)">
+          <svg viewBox="0 0 28 28" width="20" height="20">
+            <circle cx="14" cy="14" r="10" fill="none" stroke="currentColor" stroke-width="1.8" />
+            <path d="M14 4 A10 10 0 0 1 14 24 Z" fill="currentColor" />
+          </svg>
+        </button>
+
+        <button type="button" id="btn-mono-mode" class="vp-toggle-btn" title="Elimina Colori (Solo Bianco/Nero)">
+          <svg viewBox="0 0 28 28" width="20" height="20">
+            <path d="M14 4.5 C14 4.5 7.5 12.2 7.5 16.8 A6.5 6.5 0 0 0 20.5 16.8 C20.5 12.2 14 4.5 14 4.5 Z" fill="none" stroke="currentColor" stroke-width="1.8" />
+            <line x1="5.5" y1="22.5" x2="22.5" y2="5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Sfera 3D Navigazione (in alto a destra) -->
+      <div id="nav-sphere-wrap" title="Trascina per ruotare • Doppio click per reset">
+        <canvas id="nav-sphere-canvas" width="96" height="96"></canvas>
+      </div>
+
+      <!-- Pulsante Esportazione PNG (in basso a destra) -->
+      <button type="button" id="btn-export" class="export-btn" title="Esporta PNG">
+        <svg viewBox="0 0 40 40" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 7v19" />
+          <polyline points="13 19 20 26 27 19" />
+          <path d="M9 28v4h22v-4" />
+        </svg>
+      </button>
+    </main>
+  </div>
+
+  <script type="module" src="script.js"></script>
+</body>
+</html>
