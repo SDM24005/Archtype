@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ARCHTYPE — 3D Type Columns</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=4" />
   <script src="https://cdn.jsdelivr.net/npm/opentype.js@1.3.4/dist/opentype.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
   <script type="importmap">
@@ -49,9 +49,9 @@
             </button>
             <div class="font-dropdown-menu" id="font-dropdown-menu" hidden>
               <button type="button" class="font-option active" data-preset="0">GAISYR</button>
-              <button type="button" class="font-option" data-preset="1">PLAYFAIR</button>
-              <button type="button" class="font-option" data-preset="2">INTER</button>
-              <button type="button" class="font-option" data-preset="3">SPACE MONO</button>
+              <button type="button" class="font-option" data-preset="1">WALTER</button>
+              <button type="button" class="font-option" data-preset="2">CONNECT</button>
+              <button type="button" class="font-option" data-preset="3">HONEYMOON</button>
             </div>
           </div>
         </div>
@@ -63,9 +63,8 @@
             placeholder="SCRIVI QUI"
             autocomplete="off"
             spellcheck="false"
-          >COLUMN
-STUDIO
-TYPE</textarea>
+          >SCRIVI
+QUI</textarea>
         </div>
 
         <div class="sliders-section" id="global-sliders">
@@ -94,7 +93,7 @@ TYPE</textarea>
           </div>
 
           <div class="slider-item" data-key="entasi">
-            <div class="slider-label" data-i18n="entasi">RIGONFAMENTO</div>
+            <div class="slider-label" data-i18n="entasi">RIGONFIAMENTO</div>
             <div class="slider-track-wrap">
               <div class="slider-line"></div>
               <div class="slider-thumb"></div>
@@ -127,7 +126,7 @@ TYPE</textarea>
         </div>
 
         <div class="col-footer">
-          <button type="button" id="btn-reset-global" class="link-btn" data-i18n="resetGlobal">
+          <button type="button" id="btn-reset-global" class="link-btn is-hidden" data-i18n="resetGlobal">
             RESETTA GLOBALE
           </button>
         </div>
@@ -137,13 +136,13 @@ TYPE</textarea>
       <section class="panel-col">
         <div class="col-selector-header">
           <div class="section-heading" data-i18n="selectColumn">SELEZIONA COLONNA</div>
-          <div class="circle-orbit-stage">
+          <div class="circle-orbit-stage" id="circle-orbit-stage" title="CLICCA PER SELEZIONARE • TRASCINA PER RUOTARE">
             <div class="orbit-guide-ring"></div>
             <div id="column-circles" class="column-circles"></div>
           </div>
         </div>
 
-        <div class="col-visualizer-block hidden-editor" id="col-visualizer-block">
+        <div class="col-visualizer-block" id="col-visualizer-block">
           <div class="section-heading" data-i18n="editColumn">MODIFICA COLONNA</div>
           <div class="visualizer-box" id="visualizer-box">
             <svg id="column-editor-svg"></svg>
@@ -151,7 +150,7 @@ TYPE</textarea>
         </div>
 
         <div class="col-footer">
-          <button type="button" id="btn-reset-column" class="link-btn" data-i18n="resetColumn">
+          <button type="button" id="btn-reset-column" class="link-btn is-hidden" data-i18n="resetColumn">
             RESETTA FORMA
           </button>
         </div>
@@ -212,6 +211,6 @@ TYPE</textarea>
     </main>
   </div>
 
-  <script type="module" src="script.js"></script>
+  <script type="module" src="script.js?v=4"></script>
 </body>
 </html>

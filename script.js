@@ -3,16 +3,20 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 const MAX_WORDS = 4;
 const MAX_LETTERS_PER_WORD = 15;
-const FRUSTUM_SIZE = 24;
+const FRUSTUM_SIZE = 32;
 const MAX_CACHE_ENTRIES = 50;
-const DEFAULT_CAM_DIR = new THREE.Vector3(24, 18, 26).normalize();
+const DEFAULT_CAM_DIR = new THREE.Vector3(24, 14, 26).normalize();
 
+// Percorsi Font Preset: sostituisci gli URL dei 3 font con i file specifici nella cartella ./Font/
 const FONT_PRESETS = [
   { name: 'GAISYR', url: './Font/ABCGaisyrTrial-Book.otf' },
-  { name: 'PLAYFAIR', url: 'https://cdn.jsdelivr.net/npm/@fontsource/playfair-display/files/playfair-display-latin-700-normal.woff' },
-  { name: 'INTER', url: 'https://cdn.jsdelivr.net/npm/@fontsource/inter/files/inter-latin-700-normal.woff' },
-  { name: 'SPACE MONO', url: 'https://cdn.jsdelivr.net/npm/@fontsource/space-mono/files/space-mono-latin-700-normal.woff' },
+  { name: 'WALTER', url: './Font/ABCWalterNeueTrial-Bold.otf' }, // es. './Font/WalterBold.otf'
+  { name: 'CONNECT', url: './Font/ABCConnectTrial-Nail.otf' },     // es. './Font/Connect.otf'
+  { name: 'HONEYMOON', url: './Font/ABCHoneymoonTrial-Bold.otf' },   // es. './Font/Honeymoon.otf'
 ];
+
+const FONT_FALLBACK_URL =
+  'https://cdn.jsdelivr.net/npm/@fontsource/playfair-display/files/playfair-display-latin-700-normal.woff';
 
 const I18N = {
   it: {
@@ -38,6 +42,7 @@ const I18N = {
     screen: 'SCHERMO',
     exportHqPng: 'ESPORTA PNG HQ',
     navTitle: 'TRASCINA PER RUOTARE • DOPPIO CLICK PER RESET',
+    selectorTitle: 'CLICCA PER SELEZIONARE • TRASCINA PER RUOTARE',
     pdfPhrase: 'FRASE',
     pdfParams: 'PARAMETRI GLOBALI',
     pdfColumns: 'MODIFICHE COLONNE',
@@ -66,6 +71,7 @@ const I18N = {
     screen: 'SCREEN',
     exportHqPng: 'EXPORT HQ PNG',
     navTitle: 'DRAG TO ORBIT • DOUBLE CLICK TO RESET',
+    selectorTitle: 'CLICK TO SELECT • DRAG TO ORBIT',
     pdfPhrase: 'PHRASE',
     pdfParams: 'GLOBAL PARAMETERS',
     pdfColumns: 'COLUMN OVERRIDES',
@@ -80,9 +86,9 @@ const state = {
   lang: 'it',
   darkMode: false,
   fontName: 'GAISYR',
-  text: 'COLUMN\nSTUDIO\nTYPE',
+  text: 'SCRIVI\nQUI',
   words: [], // [{ text, letters: [{ char, h, w }] }]
-  selectedColIdx: null,
+  selectedColIdx: 0,
   selectedSegmentIdx: null,
   sliders: createDefaultSliders(),
 };
@@ -94,7 +100,27 @@ const wordMeshCache = new Map();
 const columnCircleEls = [];
 let cameraFocusAnim = null; // { startTheta, targetTheta, startTime, duration }
 
-// --- Parametri 3D (Valore Neutro al 50%, Massimi Ridotti per Densità e Spessore) ---
+const btnResetGlobal = document.getElementById('btn-reset-global');
+const btnResetColumn = document.getElementById('btn-reset-column');
+
+function updateResetButtonsVisibility() {
+  const hasGlobalChanges = SLIDER_KEYS.some(
+    (key) => Math.abs(state.sliders[key] - 0.5) > 0.002
+  );
+  btnResetGlobal.classList.toggle('is-hidden', !hasGlobalChanges);
+
+  const selectedWord =
+    state.selectedColIdx !== null ? state.words[state.selectedColIdx] : null;
+  const hasColumnChanges = Boolean(
+    selectedWord &&
+      selectedWord.letters.some(
+        (l) => Math.abs(l.h - 1.0) > 0.005 || Math.abs(l.w - 1.0) > 0.005
+      )
+  );
+  btnResetColumn.classList.toggle('is-hidden', !hasColumnChanges);
+}
+
+// --- Parametri 3D (Valore Neutro al 50%) ---
 function getComputedParams() {
   const s = state.sliders;
   return {
@@ -121,6 +147,7 @@ function applyLanguage() {
   document.getElementById('text-input').placeholder = dict.placeholder;
   document.getElementById('btn-lang-toggle').textContent = dict.langSwitch;
   document.getElementById('nav-sphere-wrap').title = dict.navTitle;
+  document.getElementById('circle-orbit-stage').title = dict.selectorTitle;
 }
 
 // --- Setup Three.js (Viewport Smarginato Full-Bleed) ---
@@ -167,7 +194,7 @@ const strokeMaterial = new THREE.MeshBasicMaterial({
   side: THREE.DoubleSide,
 });
 
-// --- Setup Navigatore 3D Trasparente (Filetti Sottili & Sfere Ingrandite) ---
+// --- Setup Navigatore 3D Trasparente ---
 const navCanvas = document.getElementById('nav-sphere-canvas');
 const navRenderer = new THREE.WebGLRenderer({ canvas: navCanvas, antialias: true, alpha: true });
 navRenderer.setClearColor(0x000000, 0);
@@ -277,7 +304,7 @@ navWrap.addEventListener('dblclick', () => {
 });
 
 // --- Rotazione Fluida della Camera per Portare la Colonna Selezionata di Fronte ---
-function focusCameraOnColumn(wIdx) {
+function focusCameraOnColumn(wIdx, immediate = false) {
   const n = state.words.length;
   if (n === 0 || wIdx === null || wIdx < 0 || wIdx >= n) return;
 
@@ -290,6 +317,16 @@ function focusCameraOnColumn(wIdx) {
   let delta = desiredSphTheta - sph.theta;
   while (delta > Math.PI) delta -= Math.PI * 2;
   while (delta < -Math.PI) delta += Math.PI * 2;
+
+  if (immediate) {
+    cameraFocusAnim = null;
+    sph.theta = sph.theta + delta;
+    offset.setFromSpherical(sph);
+    camera.position.copy(controls.target).add(offset);
+    camera.lookAt(controls.target);
+    controls.update();
+    return;
+  }
 
   cameraFocusAnim = {
     startTheta: sph.theta,
@@ -315,7 +352,7 @@ function stepCameraFocusAnim(nowMs) {
   if (t >= 1) cameraFocusAnim = null;
 }
 
-// --- Formattazione Testo in Epigrafe (Max 4 Parole, Solo Maiuscolo, No Doppio A Capo) ---
+// --- Formattazione Testo in Epigrafe (Max 4 Parole, Solo Maiuscolo, Almeno 1 Colonna Selezionata) ---
 const distanceSliderItem = document.getElementById('slider-distance-item');
 
 function updateDistanceSliderVisibility() {
@@ -363,22 +400,29 @@ function formatEpigraphText(rawText) {
     return { text: wordStr, letters };
   });
 
-  if (state.selectedColIdx !== null && state.selectedColIdx >= state.words.length) {
+  if (state.words.length === 0) {
     state.selectedColIdx = null;
     state.selectedSegmentIdx = null;
-  } else if (
-    state.selectedColIdx !== null &&
-    state.selectedSegmentIdx !== null &&
-    state.selectedSegmentIdx >= state.words[state.selectedColIdx].letters.length
-  ) {
-    state.selectedSegmentIdx = null;
+  } else {
+    if (state.selectedColIdx === null) {
+      state.selectedColIdx = 0;
+    } else if (state.selectedColIdx >= state.words.length) {
+      state.selectedColIdx = state.words.length - 1;
+    }
+    if (
+      state.selectedSegmentIdx !== null &&
+      state.selectedSegmentIdx >= state.words[state.selectedColIdx].letters.length
+    ) {
+      state.selectedSegmentIdx = null;
+    }
   }
 
   updateDistanceSliderVisibility();
+  updateResetButtonsVisibility();
   return state.text;
 }
 
-// --- Centratura & Margine Automatico Viewport 3D ---
+// --- Zoom Automatico Centrato sulla Scena 3D ---
 function fitCameraToScene(resetAngle = false, customAspect = null) {
   const box = new THREE.Box3().setFromObject(rootGroup);
   if (box.isEmpty()) return;
@@ -418,14 +462,13 @@ function fitCameraToScene(resetAngle = false, customAspect = null) {
     if (c.y > maxY) maxY = c.y;
   }
 
-  const viewW = Math.max(maxX - minX, 0.1);
-  const viewH = Math.max(maxY - minY, 0.1);
   const aspect = customAspect ?? (viewport.clientWidth / Math.max(viewport.clientHeight, 1));
-  const marginFill = 0.74;
-
+  const spanX = Math.max(maxX - minX, 0.1);
+  const spanY = Math.max(maxY - minY, 0.1);
+  const padding = 0.78;
   camera.zoom = Math.min(
-    (FRUSTUM_SIZE * aspect * marginFill) / viewW,
-    (FRUSTUM_SIZE * marginFill) / viewH
+    (FRUSTUM_SIZE * aspect * padding) / spanX,
+    (FRUSTUM_SIZE * padding) / spanY
   );
   camera.updateProjectionMatrix();
   controls.update();
@@ -907,7 +950,7 @@ function rebuildScene({ resetAngle = false, fit = false, highQuality = false } =
   }
 }
 
-// --- Render Alta Qualità Presenvando Angolazione e Zoom Correnti della Viewport ---
+// --- Render Alta Qualità Preservando Angolazione e Zoom Correnti della Viewport ---
 function renderHighQualityDataURL(targetW, targetH, autoFitForSheet = false) {
   const maxTexSize = renderer.capabilities.maxTextureSize || 4096;
   const safeW = THREE.MathUtils.clamp(Math.round(targetW), 200, Math.min(6000, maxTexSize));
@@ -921,7 +964,6 @@ function renderHighQualityDataURL(targetW, targetH, autoFitForSheet = false) {
   const prevPos = camera.position.clone();
   const prevTarget = controls.target.clone();
 
-  // Ricostruisce con suddivisione curve ad alta precisione senza resettare angolo o zoom
   rebuildScene({ resetAngle: false, fit: false, highQuality: true });
 
   if (autoFitForSheet) {
@@ -940,7 +982,6 @@ function renderHighQualityDataURL(targetW, targetH, autoFitForSheet = false) {
 
   const dataURL = renderer.domElement.toDataURL('image/png');
 
-  // Ripristina esattamente lo stato interattivo della viewport
   const restoreAspect = prevW / prevH;
   camera.left = (-FRUSTUM_SIZE * restoreAspect) / 2;
   camera.right = (FRUSTUM_SIZE * restoreAspect) / 2;
@@ -1106,11 +1147,62 @@ function exportA4PDF() {
   doc.save(`${slug}_A4.pdf`);
 }
 
-// --- COLONNA 2: Selettore Colonne Disposte a Cerchio e Sincronizzate col 3D ---
+// --- COLONNA 2: Selettore Colonne (Almeno 1 Selezionata + Trascinamento per Ruotare Solo sull'Asse Verticale) ---
+const circleOrbitStage = document.getElementById('circle-orbit-stage');
 const columnCirclesEl = document.getElementById('column-circles');
 const colVisualizerBlock = document.getElementById('col-visualizer-block');
 const visualizerBox = document.getElementById('visualizer-box');
 const columnEditorSvg = document.getElementById('column-editor-svg');
+
+let suppressCircleClick = false;
+
+circleOrbitStage.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0 && e.pointerType === 'mouse') return;
+  cameraFocusAnim = null;
+
+  const startX = e.clientX;
+  const startY = e.clientY;
+  let prevX = startX;
+  let dragged = false;
+
+  const onMove = (ev) => {
+    const dxTotal = ev.clientX - startX;
+    const dyTotal = ev.clientY - startY;
+    if (!dragged && Math.hypot(dxTotal, dyTotal) >= 5) {
+      dragged = true;
+      circleOrbitStage.classList.add('dragging');
+    }
+    if (!dragged) return;
+
+    const dx = ev.clientX - prevX;
+    prevX = ev.clientX;
+
+    const offset = new THREE.Vector3().subVectors(camera.position, controls.target);
+    const sph = new THREE.Spherical().setFromVector3(offset);
+    sph.theta -= dx * 0.015;
+    offset.setFromSpherical(sph);
+    camera.position.copy(controls.target).add(offset);
+    camera.lookAt(controls.target);
+    controls.update();
+  };
+
+  const onUp = () => {
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onUp);
+    circleOrbitStage.classList.remove('dragging');
+    if (dragged) {
+      suppressCircleClick = true;
+      requestAnimationFrame(() => {
+        suppressCircleClick = false;
+      });
+    }
+  };
+
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onUp);
+});
 
 function renderColumnSelectorCircles() {
   columnCirclesEl.innerHTML = '';
@@ -1126,16 +1218,14 @@ function renderColumnSelectorCircles() {
     btn.title = wordObj.text;
 
     btn.addEventListener('click', () => {
-      const selectingNew = state.selectedColIdx !== wIdx;
-      state.selectedColIdx = selectingNew ? wIdx : null;
+      if (suppressCircleClick) return;
+      state.selectedColIdx = wIdx;
       state.selectedSegmentIdx = null;
-
-      if (selectingNew) {
-        focusCameraOnColumn(wIdx);
-      }
+      focusCameraOnColumn(wIdx);
 
       renderColumnSelectorCircles();
       renderColumnVisualizer();
+      updateResetButtonsVisibility();
     });
 
     columnCirclesEl.appendChild(btn);
@@ -1180,7 +1270,7 @@ function updateColumnSelectorOrbit() {
   }
 }
 
-// --- COLONNA 2: Visualizzatore & Editor a Colonna (Nodi XY, Linee Orizzontali Y, Linee Laterali X) ---
+// --- COLONNA 2: Visualizzatore & Editor a Colonna ---
 function renderColumnVisualizer() {
   columnEditorSvg.innerHTML = '';
 
@@ -1262,7 +1352,7 @@ function renderColumnVisualizer() {
     })
   );
 
-  // Segmenti laterali (verticali o inclinati): traslano solo in X (destra/sinistra)
+  // Segmenti laterali: traslano solo in X (destra/sinistra)
   for (let sIdx = 0; sIdx < leftEdgePts.length - 1; sIdx++) {
     const affectedIndices =
       m === 1 ? [0] : [leftEdgePts[sIdx].letterIdx, leftEdgePts[sIdx + 1].letterIdx];
@@ -1351,7 +1441,6 @@ function renderColumnVisualizer() {
   }
 }
 
-// Drag 2D sui punti (X + Y)
 function attachCombinedNodeDrag(el, lIdx, sideSign, baseHalfW, unitPx) {
   el.addEventListener('pointerdown', (e) => {
     e.stopPropagation();
@@ -1383,6 +1472,7 @@ function attachCombinedNodeDrag(el, lIdx, sideSign, baseHalfW, unitPx) {
         2.5
       );
 
+      updateResetButtonsVisibility();
       renderColumnVisualizer();
       rebuildScene();
     };
@@ -1400,7 +1490,6 @@ function attachCombinedNodeDrag(el, lIdx, sideSign, baseHalfW, unitPx) {
   });
 }
 
-// Drag solo verticale (Y) sulle linee orizzontali
 function attachRungVerticalDrag(el, lIdx, unitPx) {
   el.addEventListener('pointerdown', (e) => {
     e.stopPropagation();
@@ -1423,6 +1512,7 @@ function attachRungVerticalDrag(el, lIdx, unitPx) {
         2.5
       );
 
+      updateResetButtonsVisibility();
       renderColumnVisualizer();
       rebuildScene();
     };
@@ -1440,7 +1530,6 @@ function attachRungVerticalDrag(el, lIdx, unitPx) {
   });
 }
 
-// Drag solo orizzontale (X) sulle linee verticali/inclinate
 function attachSideLineHorizontalDrag(el, letterIndices, sideSign, baseHalfW) {
   el.addEventListener('pointerdown', (e) => {
     e.stopPropagation();
@@ -1469,6 +1558,7 @@ function attachSideLineHorizontalDrag(el, letterIndices, sideSign, baseHalfW) {
         }
       });
 
+      updateResetButtonsVisibility();
       renderColumnVisualizer();
       rebuildScene();
     };
@@ -1500,6 +1590,7 @@ document.querySelectorAll('.slider-item').forEach((item) => {
     const ratio = THREE.MathUtils.clamp((clientX - rect.left) / Math.max(rect.width, 1), 0, 1);
     state.sliders[key] = ratio;
     thumb.style.left = `${ratio * 100}%`;
+    updateResetButtonsVisibility();
     rebuildScene();
   };
 
@@ -1530,14 +1621,15 @@ function syncSlidersUI() {
 }
 
 // --- Pulsanti Resetta Globale & Resetta Forma ---
-document.getElementById('btn-reset-global').addEventListener('click', (e) => {
+btnResetGlobal.addEventListener('click', (e) => {
   e.currentTarget.blur();
   state.sliders = createDefaultSliders();
   syncSlidersUI();
+  updateResetButtonsVisibility();
   rebuildScene();
 });
 
-document.getElementById('btn-reset-column').addEventListener('click', (e) => {
+btnResetColumn.addEventListener('click', (e) => {
   e.currentTarget.blur();
   if (state.selectedColIdx === null || !state.words[state.selectedColIdx]) return;
   state.words[state.selectedColIdx].letters.forEach((l) => {
@@ -1545,11 +1637,12 @@ document.getElementById('btn-reset-column').addEventListener('click', (e) => {
     l.w = 1.0;
   });
   state.selectedSegmentIdx = null;
+  updateResetButtonsVisibility();
   renderColumnVisualizer();
   rebuildScene();
 });
 
-// --- Toggle Notte & Lingua ITA / ENG (senza stato evidenziato persistente) ---
+// --- Toggle Notte & Lingua ITA / ENG ---
 document.getElementById('btn-dark-mode').addEventListener('click', (e) => {
   e.currentTarget.blur();
   state.darkMode = !state.darkMode;
@@ -1565,7 +1658,7 @@ document.getElementById('btn-lang-toggle').addEventListener('click', (e) => {
   applyLanguage();
 });
 
-// --- Menù Selezione Font Custom (Bordo Nero, Sfondo Bianco, Filetti Divisori) ---
+// --- Menù Selezione Font Custom ---
 const fontDropdownBtn = document.getElementById('font-dropdown-btn');
 const fontDropdownMenu = document.getElementById('font-dropdown-menu');
 const fontSelectedLabel = document.getElementById('font-selected-label');
@@ -1578,13 +1671,16 @@ function setLoadedFont(font, name, initialFit = false) {
     state.fontName = name;
     fontSelectedLabel.textContent = name;
   }
+  if (initialFit && state.selectedColIdx !== null) {
+    focusCameraOnColumn(state.selectedColIdx, true);
+  }
   rebuildScene({ fit: initialFit });
 }
 
-function loadFontFromUrl(url, name, fallbackPreset = null, initialFit = false) {
+function loadFontFromUrl(url, name, fallbackUrl = null, initialFit = false) {
   window.opentype.load(url, (err, font) => {
     if (err || !font) {
-      if (fallbackPreset) loadFontFromUrl(fallbackPreset.url, fallbackPreset.name, null, initialFit);
+      if (fallbackUrl) loadFontFromUrl(fallbackUrl, name, null, initialFit);
       return;
     }
     setLoadedFont(font, name, initialFit);
@@ -1620,7 +1716,7 @@ fontDropdownMenu.addEventListener('click', (e) => {
   } else if (optBtn.dataset.preset !== undefined) {
     const idx = parseInt(optBtn.dataset.preset, 10);
     const preset = FONT_PRESETS[idx];
-    if (preset) loadFontFromUrl(preset.url, preset.name, FONT_PRESETS[1]);
+    if (preset) loadFontFromUrl(preset.url, preset.name, FONT_FALLBACK_URL);
   }
 });
 
@@ -1684,7 +1780,7 @@ textInput.addEventListener('input', (e) => {
   rebuildScene({ fit: true });
 });
 
-// --- Esportazione PNG (Tagliato in Base allo Zoom e Angolo della Viewport) & PDF A4 ---
+// --- Esportazione PNG & PDF A4 ---
 const pngPopover = document.getElementById('png-export-popover');
 const pngWidthInput = document.getElementById('png-width-input');
 const pngHeightInput = document.getElementById('png-height-input');
@@ -1720,7 +1816,6 @@ document.querySelectorAll('.preset-btn').forEach((btn) => {
 document.getElementById('btn-confirm-png').addEventListener('click', () => {
   const w = parseInt(pngWidthInput.value, 10) || 2400;
   const h = parseInt(pngHeightInput.value, 10) || 3000;
-  // autoFitForSheet = false -> preserva esattamente angolazione, pan e zoom della viewport
   const dataURL = renderHighQualityDataURL(w, h, false);
 
   const link = document.createElement('a');
@@ -1765,9 +1860,17 @@ function animate(nowMs = 0) {
 // --- Avvio ---
 formatEpigraphText(state.text);
 textInput.value = state.text;
+state.selectedColIdx = state.words.length > 0 ? 0 : null;
 applyLanguage();
 syncSlidersUI();
+updateResetButtonsVisibility();
 renderColumnSelectorCircles();
 renderColumnVisualizer();
-loadFontFromUrl(FONT_PRESETS[0].url, FONT_PRESETS[0].name, FONT_PRESETS[1], true);
+loadFontFromUrl(FONT_PRESETS[0].url, FONT_PRESETS[0].name, FONT_FALLBACK_URL, true);
 animate();
+
+// Attiva subito la digitazione nel box di testo all'apertura della pagina
+requestAnimationFrame(() => {
+  textInput.focus();
+  textInput.select();
+});

@@ -53,7 +53,7 @@ html, body {
 /* --- Titolo in Alto a Sinistra (A    RCH  T   Y   PE) --- */
 #top-header {
   position: fixed;
-  top: 24px;
+  top: 30px;
   left: 0;
   right: 155px;
   height: 44px;
@@ -150,14 +150,18 @@ html, body {
   color: var(--bg);
 }
 
+.link-btn.is-hidden {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 /* --- COLONNA 1: Font, Box Testo, Slider Globali --- */
 .font-section {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  padding-bottom: 12px;
-  border-bottom: var(--line-w) solid var(--fg);
+  flex-shrink: 0;
 }
 
 /* Custom Font Dropdown piatto, bordo nero, filetti divisori, zero ombra */
@@ -255,10 +259,12 @@ html, body {
   color: var(--bg);
 }
 
-/* Box di Testo in Epigrafe (max 4 parole) */
+/* Box di Testo chiuso in un rettangolo (max 4 parole) */
 .textbox-section {
-  padding: 8px 0;
-  border-bottom: var(--line-w) solid var(--fg);
+  margin-top: 16px;
+  padding: 8px 10px;
+  border: var(--line-w) solid var(--fg);
+  flex-shrink: 0;
 }
 
 #text-input {
@@ -284,21 +290,23 @@ html, body {
   color: var(--muted);
 }
 
-/* 7 Slider Globali con maggiore margine e spaziatura */
+/* 7 Slider Globali: allineati dall'alto con spazio ampio per coprire quasi tutta la colonna */
 .sliders-section {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  padding: 16px 4px;
+  justify-content: flex-start;
+  gap: clamp(16px, calc(13vh - 80px), 64px);
+  padding: clamp(26px, calc(11.2vh - 53px), 72px) 4px 8px 4px;
 }
 
 .slider-item {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .slider-item[hidden] {
@@ -316,7 +324,7 @@ html, body {
 .slider-track-wrap {
   position: relative;
   width: 100%;
-  height: 18px;
+  height: 16px;
   display: flex;
   align-items: center;
   cursor: ew-resize;
@@ -353,6 +361,7 @@ html, body {
   padding-top: 8px;
   display: flex;
   justify-content: center;
+  flex-shrink: 0;
 }
 
 /* --- COLONNA 2: Selettore Circolare Colonna & Visualizzatore --- */
@@ -380,6 +389,12 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: grab;
+  touch-action: none;
+}
+
+.circle-orbit-stage.dragging {
+  cursor: grabbing;
 }
 
 .orbit-guide-ring {
