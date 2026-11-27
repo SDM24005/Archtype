@@ -2141,7 +2141,7 @@ function initTitleAnimation() {
     // Pesi di spaziatura (gap) tra i 5 blocchi: [prima di A, A-RCH, RCH-T, T-Y, Y-PE, dopo PE]
     gapWeights: [0.02, 0.28, 0.14, 0.24, 0.18, 0.14],
     phaseStartTime: performance.now(),
-    phaseDuration: 9000, // 5.2 secondi per ogni fase di esplorazione lenta
+    phaseDuration: 11000, // 5.2 secondi per ogni fase di esplorazione lenta
     activeDriverIdx: 1, // Indice del blocco che guida lo spostamento corrente (0..4)
     fromWeights: [0.02, 0.28, 0.14, 0.24, 0.18, 0.14],
     toWeights: [0.02, 0.28, 0.14, 0.24, 0.18, 0.14],
