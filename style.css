@@ -106,6 +106,7 @@ body.dark-mode .drop-overlay {
   position: absolute;
   top: 0;
   white-space: nowrap;
+  will-change: transform;
 }
 
 .seg-a {
@@ -578,6 +579,14 @@ body.dark-mode .drop-overlay {
   height: 114px;
   cursor: grab;
   z-index: 30;
+}
+
+#nav-sphere-wrap.hover-dot {
+  cursor: pointer;
+}
+
+#nav-sphere-wrap:active {
+  cursor: grabbing;
 }
 
 #nav-sphere-wrap:active {

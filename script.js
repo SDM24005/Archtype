@@ -249,18 +249,51 @@ const axesLinesGeo = new THREE.BufferGeometry().setFromPoints([
   new THREE.Vector3(0, 0, -0.98), new THREE.Vector3(0, 0, 0.98),
 ]);
 navGizmo.add(new THREE.LineSegments(axesLinesGeo, navHairlineMat));
+const dotFillDefault = 0x000000; // Con mix-blend-mode: difference appare bianco su sfondo chiaro
+const dotStrokeDefault = 0xffffff; // Con mix-blend-mode: difference appare come stroke nero
 
-const axisDotMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-const dotGeo = new THREE.SphereGeometry(0.115, 20, 20);
+const dotGeo = new THREE.SphereGeometry(0.105, 24, 24);
+const dotOutlineGeo = new THREE.SphereGeometry(0.132, 24, 24);
+
+const navAxisDots = [];
+let hoveredNavDot = null;
+let activeNavDot = null;
+
 [
   [0.985, 0, 0], [-0.985, 0, 0],
   [0, 0.985, 0], [0, -0.985, 0],
   [0, 0, 0.985], [0, 0, -0.985],
 ].forEach(([x, y, z]) => {
-  const m = new THREE.Mesh(dotGeo, axisDotMat);
-  m.position.set(x, y, z);
-  navGizmo.add(m);
+  const group = new THREE.Group();
+  group.position.set(x, y, z);
+
+  // Bordo esterno (BackSide leggermente più grande)
+  const outlineMat = new THREE.MeshBasicMaterial({
+    color: dotStrokeDefault,
+    side: THREE.BackSide,
+  });
+  const outlineMesh = new THREE.Mesh(dotOutlineGeo, outlineMat);
+
+  // Riempimento interno
+  const fillMat = new THREE.MeshBasicMaterial({
+    color: dotFillDefault,
+  });
+  const fillMesh = new THREE.Mesh(dotGeo, fillMat);
+
+  group.add(outlineMesh, fillMesh);
+  navGizmo.add(group);
+  navAxisDots.push({ group, fillMesh, fillMat, outlineMat });
 });
+
+function updateNavDotsVisuals() {
+  for (const dot of navAxisDots) {
+    const isHighlighted = dot === hoveredNavDot || dot === activeNavDot;
+    // Quando hover o attivo: riempimento e stroke si invertono diventando neri in viewport
+    dot.fillMat.color.setHex(isHighlighted ? dotStrokeDefault : dotFillDefault);
+    dot.outlineMat.color.setHex(dotStrokeDefault);
+  }
+  navWrap.classList.toggle('hover-dot', Boolean(hoveredNavDot));
+}
 
 function syncThemeTo3D() {
   const dark = state.darkMode;
@@ -274,15 +307,54 @@ function syncThemeTo3D() {
 
 const navWrap = document.getElementById('nav-sphere-wrap');
 navWrap.style.touchAction = 'none';
+
+const navRaycaster = new THREE.Raycaster();
+const navPointer = new THREE.Vector2();
+
+function pickNavDot(clientX, clientY) {
+  const rect = navWrap.getBoundingClientRect();
+  navPointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+  navPointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+  navRaycaster.setFromCamera(navPointer, navCamera);
+
+  const targets = navAxisDots.map((d) => d.fillMesh);
+  const hits = navRaycaster.intersectObjects(targets, false);
+  if (hits.length === 0) return null;
+  return navAxisDots.find((d) => d.fillMesh === hits[0].object) || null;
+}
+
+navWrap.addEventListener('pointermove', (e) => {
+  if (activeNavDot) return;
+  const hit = pickNavDot(e.clientX, e.clientY);
+  if (hit !== hoveredNavDot) {
+    hoveredNavDot = hit;
+    updateNavDotsVisuals();
+  }
+});
+
+navWrap.addEventListener('pointerleave', () => {
+  if (!activeNavDot && hoveredNavDot) {
+    hoveredNavDot = null;
+    updateNavDotsVisuals();
+  }
+});
+
 navWrap.addEventListener('pointerdown', (e) => {
   e.preventDefault();
   cameraFocusAnim = null;
+
+  activeNavDot = pickNavDot(e.clientX, e.clientY);
+  hoveredNavDot = activeNavDot;
+  updateNavDotsVisuals();
+
   let prevX = e.clientX;
   let prevY = e.clientY;
+  let dragged = false;
 
   const onMove = (ev) => {
     const dx = ev.clientX - prevX;
     const dy = ev.clientY - prevY;
+    if (Math.hypot(dx, dy) > 2) dragged = true;
     prevX = ev.clientX;
     prevY = ev.clientY;
 
@@ -296,7 +368,24 @@ navWrap.addEventListener('pointerdown', (e) => {
     controls.update();
   };
 
-  const onUp = () => {
+  const onUp = (ev) => {
+    // Se si è cliccato su un pallino senza trascinare, allinea la camera a quell'asse
+    if (!dragged && activeNavDot) {
+      const axisDir = activeNavDot.group.position.clone().normalize();
+      if (Math.abs(axisDir.y) > 0.99) {
+        axisDir.z = axisDir.y > 0 ? 0.08 : -0.08;
+        axisDir.normalize();
+      }
+      const dist = camera.position.distanceTo(controls.target);
+      camera.position.copy(controls.target).addScaledVector(axisDir, dist);
+      camera.lookAt(controls.target);
+      controls.update();
+    }
+
+    activeNavDot = null;
+    hoveredNavDot = pickNavDot(ev.clientX, ev.clientY);
+    updateNavDotsVisuals();
+
     window.removeEventListener('pointermove', onMove);
     window.removeEventListener('pointerup', onUp);
     window.removeEventListener('pointercancel', onUp);
@@ -1677,10 +1766,7 @@ function setLoadedFont(font, name, initialFit = false) {
     state.fontName = name;
     fontSelectedLabel.textContent = name;
   }
-  if (initialFit && state.selectedColIdx !== null) {
-    focusCameraOnColumn(state.selectedColIdx, true);
-  }
-  rebuildScene({ fit: initialFit });
+  rebuildScene({ resetAngle: initialFit, fit: initialFit });
 }
 
 function loadFontFromUrl(url, name, fallbackUrl = null, initialFit = false) {
@@ -2012,11 +2098,158 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(viewport.clientWidth, viewport.clientHeight);
 
+  initTitleAnimation();
   renderColumnVisualizer();
 });
 
+// --- Animazione Lenta e Concatenata del Titolo (A  RCH  T  Y  PE) ---
+const titleSegEls = [
+  document.querySelector('.seg-a'),
+  document.querySelector('.seg-rch'),
+  document.querySelector('.seg-t'),
+  document.querySelector('.seg-y'),
+  document.querySelector('.seg-pe'),
+].filter(Boolean);
+
+const titleHeaderEl = document.getElementById('top-header');
+let titleAnimState = null;
+
+function initTitleAnimation() {
+  if (titleSegEls.length !== 5 || !titleHeaderEl) return;
+
+  // Resetta eventuali transform per misurare le posizioni base CSS
+  titleSegEls.forEach((el) => {
+    el.style.transform = 'translateX(0px)';
+  });
+
+  const baseLefts = titleSegEls.map((el) => el.offsetLeft);
+  const widths = titleSegEls.map((el) => el.offsetWidth);
+
+  titleAnimState = {
+    baseLefts,
+    widths,
+    // Posizioni correnti interpolate
+    currentX: [...baseLefts],
+    // Pesi di spaziatura (gap) tra i 5 blocchi: [prima di A, A-RCH, RCH-T, T-Y, Y-PE, dopo PE]
+    gapWeights: [0.02, 0.28, 0.14, 0.24, 0.18, 0.14],
+    phaseStartTime: performance.now(),
+    phaseDuration: 9000, // 5.2 secondi per ogni fase di esplorazione lenta
+    activeDriverIdx: 1, // Indice del blocco che guida lo spostamento corrente (0..4)
+    fromWeights: [0.02, 0.28, 0.14, 0.24, 0.18, 0.14],
+    toWeights: [0.02, 0.28, 0.14, 0.24, 0.18, 0.14],
+  };
+
+  pickNextTitleExploration(performance.now(), true);
+}
+
+function pickNextTitleExploration(nowMs, isFirst = false) {
+  if (!titleAnimState) return;
+  const st = titleAnimState;
+
+  st.fromWeights = [...st.gapWeights];
+  st.phaseStartTime = nowMs;
+
+  // Sceglie a turno un blocco diverso (es. RCH, T, Y, PE) che esplora lo spazio
+  if (!isFirst) {
+    const candidates = [1, 2, 3, 4, 0].filter((idx) => idx !== st.activeDriverIdx);
+    st.activeDriverIdx = candidates[Math.floor(Math.random() * candidates.length)];
+  }
+
+  // Genera nuovi pesi per gli spazi (gap) attorno al blocco attivo
+  const next = [0.02, 0.16, 0.16, 0.16, 0.16, 0.12];
+  const driver = st.activeDriverIdx;
+
+  // Il blocco attivo spinge verso sinistra o verso destra comprimendo un lato e aprendo l'altro
+  const pushLeft = Math.random() > 0.45;
+  const boost = 0.26 + Math.random() * 0.16;
+
+  if (driver === 0) {
+    // 'A' si sposta verso destra spingendo la catena, oppure torna al margine sinistro
+    next[0] = pushLeft ? 0.01 : 0.18 + Math.random() * 0.12;
+    next[1] = pushLeft ? 0.34 : 0.08;
+  } else {
+    // Un blocco interno (RCH, T, Y, PE) esplora a sinistra (comprimendo i blocchi a sinistra) o a destra
+    if (pushLeft) {
+      next[driver] = 0.03 + Math.random() * 0.04; // avvicina al blocco a sinistra
+      next[driver + 1] = boost;                  // apre spazio a destra
+    } else {
+      next[driver] = boost;                      // apre spazio a sinistra
+      next[driver + 1] = 0.03 + Math.random() * 0.04; // spinge verso destra
+    }
+  }
+
+  // Normalizza i pesi affinché la somma sia 1
+  const sum = next.reduce((a, b) => a + b, 0);
+  st.toWeights = next.map((w) => w / sum);
+}
+
+function stepTitleAnimation(nowMs) {
+  if (!titleAnimState) return;
+  const st = titleAnimState;
+
+  const elapsed = nowMs - st.phaseStartTime;
+  let t = elapsed / st.phaseDuration;
+  if (t >= 1) {
+    pickNextTitleExploration(nowMs, false);
+    t = 0;
+  }
+
+  // Curva sinusoidale morbida e continua (nessuno scatto né pausa brusca)
+  const ease = 0.5 - 0.5 * Math.cos(Math.PI * t);
+  for (let i = 0; i < st.gapWeights.length; i++) {
+    st.gapWeights[i] = st.fromWeights[i] + (st.toWeights[i] - st.fromWeights[i]) * ease;
+  }
+
+  // Limiti sicuri dell'header: margine sinistro 26px e margine destro prima del navigatore 3D
+  const minLeft = 26;
+  const headerRightLimit = titleHeaderEl.clientWidth - 18;
+  const minGapPx = 14; // Distanza minima garantita tra due blocchi per non sovrapporsi mai
+
+  const totalLettersW = st.widths.reduce((a, b) => a + b, 0);
+  const totalMinGaps = minGapPx * (st.widths.length - 1);
+  const freeSpace = Math.max(0, headerRightLimit - minLeft - totalLettersW - totalMinGaps);
+
+  // Calcola le posizioni target distribuendo lo spazio libero
+  const targetX = new Array(st.widths.length);
+  let cursor = minLeft + st.gapWeights[0] * freeSpace;
+
+  for (let i = 0; i < st.widths.length; i++) {
+    targetX[i] = cursor;
+    cursor += st.widths[i] + minGapPx + st.gapWeights[i + 1] * freeSpace;
+  }
+
+  // Passaggio da destra a sinistra: i blocchi più a destra vincolano e spingono quelli a sinistra
+  const maxLastX = headerRightLimit - st.widths[st.widths.length - 1];
+  if (targetX[targetX.length - 1] > maxLastX) {
+    targetX[targetX.length - 1] = maxLastX;
+  }
+  for (let i = targetX.length - 2; i >= 0; i--) {
+    const maxAllowed = targetX[i + 1] - st.widths[i] - minGapPx;
+    if (targetX[i] > maxAllowed) {
+      targetX[i] = maxAllowed;
+    }
+  }
+
+  // Passaggio di sicurezza da sinistra a destra per non uscire mai dal bordo sinistro (26px)
+  if (targetX[0] < minLeft) targetX[0] = minLeft;
+  for (let i = 1; i < targetX.length; i++) {
+    const minAllowed = targetX[i - 1] + st.widths[i - 1] + minGapPx;
+    if (targetX[i] < minAllowed) {
+      targetX[i] = minAllowed;
+    }
+  }
+
+  // Smorzamento continuo frame-by-frame
+  for (let i = 0; i < st.widths.length; i++) {
+    st.currentX[i] += (targetX[i] - st.currentX[i]) * 0.035;
+    const dx = st.currentX[i] - st.baseLefts[i];
+    titleSegEls[i].style.transform = `translate3d(${dx.toFixed(2)}px, 0, 0)`;
+  }
+}
+
 function animate(nowMs = 0) {
   requestAnimationFrame(animate);
+  stepTitleAnimation(nowMs);
   stepCameraFocusAnim(nowMs);
   controls.update();
 
@@ -2039,6 +2272,8 @@ updateResetButtonsVisibility();
 renderColumnSelectorCircles();
 renderColumnVisualizer();
 loadFontFromUrl(FONT_PRESETS[0].url, FONT_PRESETS[0].name, FONT_FALLBACK_URL, true);
+initTitleAnimation();
+document.fonts?.ready.then(initTitleAnimation);
 animate();
 
 // Attiva subito la digitazione con il cursore lampeggiante alla fine senza evidenziare in blu
