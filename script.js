@@ -53,7 +53,7 @@ const I18N = {
     pdfNone: 'NESSUNA MODIFICA SINGOLA',
     fontLabel: 'FONT',
     textLabel: 'TESTO',
-    uploadFont: 'CARICA FONT',
+    uploadFont: '+',
   },
   en: {
     dropFontHint: 'DROP FONT FILE HERE (.OTF / .TTF / .WOFF)',
@@ -89,7 +89,7 @@ const I18N = {
     pdfNone: 'NO INDIVIDUAL OVERRIDES',
     fontLabel: 'FONT',
     textLabel: 'TEXT',
-    uploadFont: 'UPLOAD FONT',
+    uploadFont: '+',
   },
 };
 

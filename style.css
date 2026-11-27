@@ -410,7 +410,7 @@ body.dark-mode .drop-overlay {
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  padding-bottom: 10px;
+  padding-bottom: 32px;
   flex-shrink: 0;
 }
 
@@ -793,4 +793,9 @@ body.dark-mode .drop-overlay {
   #archtype-title {
     font-size: 30px;
   }
+}
+
+.font-upload-option {
+  font-size: 16px;
+  line-height: 1;
 }
