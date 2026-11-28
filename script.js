@@ -1649,10 +1649,11 @@ function renderColumnVisualizer() {
   const baselineOffset = Math.max(18, Math.round(boxH * 0.055));
   const baselineY = boxH - baselineOffset;
 
-  // Allinea esattamente la linea dell'ultimo slider alla linea di base del grafico
+  // .sliders-section e .visualizer-box terminano alla stessa quota sopra .col-footer:
+  // basta compensare solo baselineOffset meno metà altezza del binario dello slider (8px)
   const slidersEl = document.getElementById('global-sliders');
   if (slidersEl) {
-    slidersEl.style.paddingBottom = `${baselineOffset}px`;
+    slidersEl.style.paddingBottom = `${Math.max(4, baselineOffset - 8)}px`;
   }
 
   const availH = Math.max(40, baselineY - 14);
