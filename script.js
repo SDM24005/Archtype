@@ -2430,6 +2430,7 @@ function pickRandomPresentationSliders() {
     entasi: 0.15 + Math.random() * 0.70,
     density: 0.18 + Math.random() * 0.30,    // Metà bassa (18% - 48%): sempre fluido
     thickness: 0.15 + Math.random() * 0.30,  // Metà bassa (15% - 45%): fogli nitidi e leggeri
+    stroke: 0.25 + Math.random() * 0.45,     // Traccia nitida (25% - 70%)
     distance: 0.25 + Math.random() * 0.55,
   };
 }
@@ -2441,10 +2442,6 @@ function selectPresentationFontForWordCount(wordCount) {
     fontDropdownMenu.querySelectorAll('.font-option:not(.font-upload-option)')
   );
 
-  // Filtra i font adatti al numero di parole:
-  // - 4 parole: solo font semplici/leggeri (esclude CONNECT e GROW)
-  // - 1 parola: font complessi/espressivi (CONNECT, GROW o eventuali font custom)
-  // - 3 parole: tutti tranne CONNECT (o tutti i disponibili se ce ne sono pochi)
   let pool = allOptions.filter((btn) => {
     const name = btn.textContent.trim().toUpperCase();
     if (wordCount >= 4) {
@@ -2485,21 +2482,24 @@ function preparePresentationSequence(seqIdx, nowMs) {
   presentationState.phase = 'typing';
   presentationState.lastTypeTime = nowMs;
 
-  // Imposta nuovi valori leggeri (metà bassa) per densità e spessore a inizio scena
+  // Imposta nuovi valori per i parametri geometrici (densità, spessore, traccia) a inizio scena
   const nextSliders = pickRandomPresentationSliders();
   state.sliders.density = nextSliders.density;
   state.sliders.thickness = nextSliders.thickness;
+  state.sliders.stroke = nextSliders.stroke;
+
   if (presentationState.sliderFrom) {
     presentationState.sliderFrom.density = nextSliders.density;
     presentationState.sliderFrom.thickness = nextSliders.thickness;
+    presentationState.sliderFrom.stroke = nextSliders.stroke;
   }
   if (presentationState.sliderTo) {
     presentationState.sliderTo.density = nextSliders.density;
     presentationState.sliderTo.thickness = nextSliders.thickness;
+    presentationState.sliderTo.stroke = nextSliders.stroke;
   }
   syncSlidersUI();
 
-  // Sceglie il font in base al numero di parole (anche fin dalla prima sequenza)
   selectPresentationFontForWordCount(words.length);
 }
 
@@ -2554,7 +2554,7 @@ function stepPresentationMode(nowMs) {
   if (!presentationState.active) return;
   const ps = presentationState;
 
-  // 1. Rotazione lenta e costante intorno all'asse verticale a 60fps (costo zero)
+  // 1. Rotazione lenta e costante intorno all'asse verticale a 60fps
   const offset = new THREE.Vector3().subVectors(camera.position, controls.target);
   const sph = new THREE.Spherical().setFromVector3(offset);
   sph.theta += 0.0009;
@@ -2562,24 +2562,26 @@ function stepPresentationMode(nowMs) {
   camera.position.copy(controls.target).add(offset);
   camera.lookAt(controls.target);
 
-  // 2. Morphing continuo degli slider (mantenendo density e thickness fissi per non ricreare geometrie)
+  // 2. Morphing continuo degli slider (mantenendo density, thickness e stroke fissi per non ricreare geometrie)
   let morphT = (nowMs - ps.sliderMorphStart) / ps.sliderMorphDuration;
   if (morphT >= 1) {
     ps.sliderFrom = { ...state.sliders };
     ps.sliderTo = pickRandomPresentationSliders();
-    // Mantieni density e thickness stabili durante il morph per evitare riallocazioni RAM
     ps.sliderTo.density = ps.sliderFrom.density;
     ps.sliderTo.thickness = ps.sliderFrom.thickness;
+    ps.sliderTo.stroke = ps.sliderFrom.stroke;
     ps.sliderMorphStart = nowMs;
     morphT = 0;
   }
   const easedMorph = 0.5 - 0.5 * Math.cos(Math.PI * morphT);
   SLIDER_KEYS.forEach((key) => {
-    state.sliders[key] = ps.sliderFrom[key] + (ps.sliderTo[key] - ps.sliderFrom[key]) * easedMorph;
+    const fromVal = ps.sliderFrom[key] ?? state.sliders[key];
+    const toVal = ps.sliderTo[key] ?? state.sliders[key];
+    state.sliders[key] = fromVal + (toVal - fromVal) * easedMorph;
   });
   syncSlidersUI();
 
-  // 3. Animazione continua della larghezza (w) delle lettere (solo matrice GPU, zero RAM)
+  // 3. Animazione continua della larghezza (w) delle lettere
   const elapsedSec = (nowMs - ps.startTime) * 0.001;
   state.words.forEach((wordObj, wIdx) => {
     const seed = ps.colWaveSeeds[wIdx % ps.colWaveSeeds.length];
@@ -2588,17 +2590,15 @@ function stepPresentationMode(nowMs) {
     });
   });
 
-  // Aggiorna la scena 3D (riusa solo la cache senza creare nuove geometrie)
   rebuildScene({ fit: false });
 
-  // Aggiorna l'SVG 2D solo ogni 80ms per non appesantire il DOM
   if (nowMs - ps.lastGeometryUpdate >= 80) {
     ps.lastGeometryUpdate = nowMs;
     updateResetButtonsVisibility();
     renderColumnVisualizer();
   }
 
-  // 4. Scrittura automatica delle parole (ciclo completo di 9 scene = ~3 minuti)
+  // 4. Scrittura automatica delle parole
   if (ps.phase === 'typing') {
     if (nowMs - ps.lastTypeTime >= 260) {
       ps.lastTypeTime = nowMs;
@@ -2610,7 +2610,6 @@ function stepPresentationMode(nowMs) {
         const lines = [...ps.typedWords, partialWord];
         applyPresentationText(lines.join('\n'));
       } else {
-        // Imposta una variazione statica di altezza (h) alla fine della parola
         const wordObj = state.words[ps.currentWordIdx];
         if (wordObj) {
           const seed = ps.colWaveSeeds[ps.currentWordIdx % ps.colWaveSeeds.length];
@@ -2641,13 +2640,13 @@ function stepPresentationMode(nowMs) {
       if (currentStr.length > 0) {
         applyPresentationText(currentStr.slice(0, -1));
       } else {
-        // Svuota la cache prima di passare al font/sequenza successiva
         clearWordMeshCache();
         preparePresentationSequence(ps.seqIndex + 1, nowMs);
       }
     }
   }
 }
+
 window.addEventListener(
   'pointerdown',
   (e) => {
