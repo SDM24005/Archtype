@@ -54,6 +54,7 @@ const I18N = {
     fontLabel: 'FONT',
     textLabel: 'TESTO',
     uploadFont: '+',
+    stroke: 'TRACCIA',
   },
   en: {
     dropFontHint: 'DROP FONT FILE HERE (.OTF / .TTF / .WOFF)',
@@ -90,10 +91,11 @@ const I18N = {
     fontLabel: 'FONT',
     textLabel: 'TEXT',
     uploadFont: '+',
+    stroke: 'STROKE',
   },
 };
 
-const SLIDER_KEYS = ['height', 'width', 'rotation', 'entasi', 'density', 'thickness', 'distance'];
+const SLIDER_KEYS = ['height', 'width', 'rotation', 'entasi', 'density', 'thickness', 'stroke', 'distance'];
 const createDefaultSliders = () => Object.fromEntries(SLIDER_KEYS.map((key) => [key, 0.5]));
 
 const state = {
@@ -143,8 +145,9 @@ function getComputedParams() {
     widthScale: 0.35 + s.width * 1.3,             // 0.5 -> 1.00
     rotationDeg: (s.rotation - 0.5) * 360,        // 0.5 -> 0°
     entasi: (s.entasi - 0.5) * 1.3,               // 0.5 -> 0.00
-    sheetsPerUnit: 2.0 + s.density * 8.0,         // 0.5 -> 6.0 fogli/unità, max 10.0
-    sheetThickness: 0.015 + s.thickness * 0.21,   // 0.5 -> 0.12, max 0.225
+    sheetsPerUnit: s.density * 12.0,              // 0.0 -> 0 (solo lettere impilate), 0.5 -> 6.0
+    sheetThickness: 0.015 + s.thickness * 0.21,   // 0.5 -> 0.12
+    strokeWidth: s.stroke * 0.15,                 // 0.0 -> 0 (nessuna traccia), 0.5 -> 0.075
     clusterSpacing: s.distance * 10.0,            // 0.5 -> 5.0
   };
 }
@@ -836,16 +839,16 @@ function setWordMeshCache(key, slices) {
   wordMeshCache.set(key, slices);
 }
 
-function getWordSlices(validLetters, layers, totalHeightWeight, sheetThickness, highQuality = false) {
+function getWordSlices(validLetters, layers, totalHeightWeight, sheetThickness, strokeWidth, highQuality = false) {
   const ringSamples = highQuality ? 192 : 64;
   const curveSeg = highQuality ? 18 : 6;
   const strokeDiv = highQuality ? 18 : 8;
 
   const wordKey = validLetters.map((l) => `${l.glyph.char}:${(l.h / totalHeightWeight).toFixed(2)}`).join('|');
-  const cacheKey = `${wordKey}#${layers}#${sheetThickness.toFixed(2)}#${highQuality ? 'HQ' : 'SD'}`;
+  const cacheKey = `${wordKey}#${layers}#${sheetThickness.toFixed(2)}#${strokeWidth.toFixed(3)}#${highQuality ? 'HQ' : 'SD'}`;
   if (wordMeshCache.has(cacheKey)) return wordMeshCache.get(cacheKey);
 
-  const strokeW = 0.075;
+  const strokeW = strokeWidth;
 
   if (validLetters.length === 1) {
     const g = validLetters[0].glyph;
@@ -855,6 +858,21 @@ function getWordSlices(validLetters, layers, totalHeightWeight, sheetThickness, 
     strokeGeo.translate(-g.center.x, -g.center.y, 0);
     const shared = { bodyGeo, strokeGeo };
     const slices = Array.from({ length: layers }, () => shared);
+    setWordMeshCache(cacheKey, slices);
+    return slices;
+  }
+
+  // Se layers === validLetters.length (densità al minimo 0): impila solo le lettere pure senza step intermedi
+  if (layers === validLetters.length) {
+    const slices = [];
+    for (let i = validLetters.length - 1; i >= 0; i--) {
+      const g = validLetters[i].glyph;
+      const bodyGeo = buildSheetBodyGeometry(g.shapes, sheetThickness, curveSeg);
+      bodyGeo.translate(-g.center.x, -g.center.y, 0);
+      const strokeGeo = buildDualStrokeGeometry(g.shapes, strokeW, sheetThickness, strokeDiv);
+      strokeGeo.translate(-g.center.x, -g.center.y, 0);
+      slices.push({ bodyGeo, strokeGeo });
+    }
     setWordMeshCache(cacheKey, slices);
     return slices;
   }
@@ -1042,8 +1060,23 @@ function rebuildScene({ resetAngle = false, fit = false, highQuality = false } =
     const colHeight = totalHWeight * unitHeight;
 
     const maxLayers = highQuality ? 140 : 105;
-    const colLayers = THREE.MathUtils.clamp(Math.round(colHeight * p.sheetsPerUnit) + 1, 3, maxLayers);
-    const slices = getWordSlices(col.validLetters, colLayers, totalHWeight, p.sheetThickness, highQuality);
+    const isZeroInterp = state.sliders.density <= 0.005;
+    const colLayers = isZeroInterp
+      ? col.validLetters.length
+      : THREE.MathUtils.clamp(
+          Math.max(col.validLetters.length, Math.round(colHeight * p.sheetsPerUnit) + 1),
+          col.validLetters.length,
+          maxLayers
+        );
+
+    const slices = getWordSlices(
+      col.validLetters,
+      colLayers,
+      totalHWeight,
+      p.sheetThickness,
+      p.strokeWidth,
+      highQuality
+    );
 
     for (let i = 0; i < colLayers; i++) {
       const slice = slices[i];
@@ -1053,7 +1086,9 @@ function rebuildScene({ resetAngle = false, fit = false, highQuality = false } =
       const topDown = 1 - t;
       const y = t * colHeight + p.sheetThickness * 0.5 + 0.002;
 
-      const wWeight = sampleLetterWidthAt(col.validLetters, totalHWeight, topDown);
+      const wWeight = isZeroInterp
+        ? col.validLetters[col.validLetters.length - 1 - i].w
+        : sampleLetterWidthAt(col.validLetters, totalHWeight, topDown);
       const entasiMul = 1.0 + p.entasi * Math.sin(Math.PI * t);
       const scaleXZ = Math.max(0.05, baseScale * wWeight * entasiMul);
 
@@ -1256,6 +1291,7 @@ function exportA4PDF() {
     [dict.entasi, `${p.entasi.toFixed(2)} (${Math.round(s.entasi * 100)}%)`],
     [dict.density, `${p.sheetsPerUnit.toFixed(1)} / U (${Math.round(s.density * 100)}%)`],
     [dict.thickness, `${p.sheetThickness.toFixed(3)} (${Math.round(s.thickness * 100)}%)`],
+    [dict.stroke, `${p.strokeWidth.toFixed(3)} (${Math.round(s.stroke * 100)}%)`],
   ];
   if (state.words.length > 1) {
     rows.push([dict.distance, `${p.clusterSpacing.toFixed(1)} (${Math.round(s.distance * 100)}%)`]);
@@ -1735,6 +1771,15 @@ document.querySelectorAll('.slider-item').forEach((item) => {
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onUp);
   });
+
+  item.addEventListener('dblclick', (e) => {
+    e.preventDefault();
+    if (Math.abs(state.sliders[key] - 0.5) <= 0.002) return;
+    state.sliders[key] = 0.5;
+    thumb.style.left = '50%';
+    updateResetButtonsVisibility();
+    rebuildScene();
+  });
 });
 
 function syncSlidersUI() {
@@ -1905,7 +1950,7 @@ function handleFontFile(file) {
         existingBtn.className = 'font-option';
         existingBtn.dataset.custom = String(customIdx);
         existingBtn.textContent = cleanName;
-        // Inserisce il nuovo font PRIMA del pulsante "CARICA FONT" così resta sempre ultimo
+        // Inserisce il nuovo font PRIMA del pulsante "+" così resta sempre ultimo
         fontDropdownMenu.insertBefore(existingBtn, btnMenuUploadFont);
       }
 

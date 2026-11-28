@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ARCHTYPE — 3D Type Columns</title>
-  <link rel="stylesheet" href="style.css?v=7" />
+  <link rel="stylesheet" href="style.css?v=8" />
   <script src="https://cdn.jsdelivr.net/npm/opentype.js@1.3.4/dist/opentype.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
   <script type="importmap">
@@ -36,7 +36,7 @@
 
     <!-- Due Colonne Controlli a Sinistra -->
     <div id="left-panels">
-      <!-- COLONNA 1: Font, Box di Testo, 7 Slider Globali, Resetta Globale -->
+      <!-- COLONNA 1: Font, Box di Testo, 8 Slider Globali, Resetta Globale -->
       <aside class="panel-col">
         <div class="font-section">
           <div class="section-heading" data-i18n="fontLabel">FONT</div>
@@ -55,9 +55,7 @@
               <button type="button" class="font-option" data-preset="1">WALTER</button>
               <button type="button" class="font-option" data-preset="2">CONNECT</button>
               <button type="button" class="font-option" data-preset="3">GROW</button>
-              <button type="button" class="font-option font-upload-option" id="btn-menu-upload-font" data-i18n="uploadFont">
-                CARICA FONT
-              </button>
+              <button type="button" class="font-option font-upload-option" id="btn-menu-upload-font" data-i18n="uploadFont">+</button>
             </div>
           </div>
         </div>
@@ -119,6 +117,14 @@ QUI</textarea>
 
           <div class="slider-item" data-key="thickness">
             <div class="slider-label" data-i18n="thickness">SPESSORE</div>
+            <div class="slider-track-wrap">
+              <div class="slider-line"></div>
+              <div class="slider-thumb"></div>
+            </div>
+          </div>
+
+          <div class="slider-item" data-key="stroke">
+            <div class="slider-label" data-i18n="stroke">TRACCIA</div>
             <div class="slider-track-wrap">
               <div class="slider-line"></div>
               <div class="slider-thumb"></div>
@@ -243,6 +249,6 @@ QUI</textarea>
     </main>
   </div>
 
-  <script type="module" src="script.js?v=7"></script>
+  <script type="module" src="script.js?v=8"></script>
 </body>
 </html>
