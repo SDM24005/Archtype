@@ -1638,6 +1638,7 @@ function attachCombinedNodeDrag(el, lIdx, sideSign, baseHalfW, unitPx) {
     };
 
     const onUp = () => {
+      state.selectedSegmentIdx = null;
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
@@ -1678,6 +1679,7 @@ function attachRungVerticalDrag(el, lIdx, unitPx) {
     };
 
     const onUp = () => {
+      state.selectedSegmentIdx = null;
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
@@ -1724,6 +1726,7 @@ function attachSideLineHorizontalDrag(el, letterIndices, sideSign, baseHalfW) {
     };
 
     const onUp = () => {
+      state.selectedSegmentIdx = null;
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
