@@ -1190,20 +1190,33 @@ function renderHighQualityDataURL(targetW, targetH, autoFitForSheet = false) {
   return dataURL;
 }
 
-// --- Disegno Testo Vettoriale su PDF usando il Font Attivo ---
-function drawFontTextOnPDF(doc, text, x, y, fontSizePt, align = 'left') {
-  if (!currentFont || !text) {
+// --- Caricamento Dedicato di ABCGaisyrTrial-Book per il PDF Specimen ---
+let pdfSpecimenFont = null;
+
+window.opentype.load(FONT_PRESETS[0].url, (err, font) => {
+  if (!err && font) {
+    pdfSpecimenFont = font;
+  }
+});
+
+function getPdfFont() {
+  return pdfSpecimenFont || currentFont;
+}
+
+function drawFontTextOnPDF(doc, text, x, y, fontSizePt, align = 'left', fontObj = null) {
+  const activeFont = fontObj || getPdfFont();
+  if (!activeFont || !text) {
     doc.text(text, x, y, { align });
     return;
   }
 
   const sizeMm = fontSizePt * 0.352778;
-  const totalWidth = currentFont.getAdvanceWidth(text, sizeMm);
+  const totalWidth = activeFont.getAdvanceWidth(text, sizeMm);
   let drawX = x;
   if (align === 'center') drawX = x - totalWidth * 0.5;
   else if (align === 'right') drawX = x - totalWidth;
 
-  const path = currentFont.getPath(text, drawX, y, sizeMm);
+  const path = activeFont.getPath(text, drawX, y, sizeMm);
   let cx = 0;
   let cy = 0;
   let hasSegments = false;
@@ -1240,7 +1253,97 @@ function drawFontTextOnPDF(doc, text, x, y, fontSizePt, align = 'left') {
   }
 }
 
-// --- Generazione PDF A4 ---
+// --- Disegno Vettoriale dei Grafici a Colonna (Zona C) ---
+function drawColumnChartsOnPDF(doc, boxX, boxY, boxW, boxH, bgRgb, fgRgb) {
+  const words = state.words.filter((w) => w.letters && w.letters.length > 0);
+  if (words.length === 0) return;
+
+  const n = words.length;
+  const padX = 4;
+  const padTop = 4;
+  const padBottom = 6;
+  const gapX = n > 1 ? 6 : 0;
+
+  const usableW = boxW - padX * 2 - gapX * (n - 1);
+  const slotW = usableW / n;
+  const baselineY = boxY + boxH - padBottom;
+  const availH = Math.max(12, baselineY - (boxY + padTop));
+
+  doc.setLineWidth(0.22);
+
+  words.forEach((wordObj, wIdx) => {
+    const letters = wordObj.letters;
+    const m = letters.length;
+    const slotCenterX = boxX + padX + slotW * (wIdx + 0.5) + gapX * wIdx;
+
+    const maxHalfW = Math.min(slotW * 0.42, 16);
+    const baseHalfW = maxHalfW * 0.56;
+
+    const spanWeights =
+      m === 1
+        ? [letters[0].h]
+        : Array.from({ length: m - 1 }, (_, i) => (letters[i].h + letters[i + 1].h) * 0.5);
+
+    const totalSpanWeight = spanWeights.reduce((a, b) => a + b, 0);
+    const naturalUnitMm = 6.2;
+    const unitMm =
+      totalSpanWeight * naturalUnitMm > availH
+        ? availH / Math.max(totalSpanWeight, 0.2)
+        : naturalUnitMm;
+
+    const leftPts = [];
+    const rightPts = [];
+
+    if (m === 1) {
+      const hMm = Math.min(availH, letters[0].h * unitMm);
+      const halfW = THREE.MathUtils.clamp(baseHalfW * letters[0].w, 2.0, maxHalfW);
+      leftPts.push({ x: slotCenterX - halfW, y: baselineY - hMm });
+      leftPts.push({ x: slotCenterX - halfW, y: baselineY });
+      rightPts.push({ x: slotCenterX + halfW, y: baselineY - hMm });
+      rightPts.push({ x: slotCenterX + halfW, y: baselineY });
+    } else {
+      let currY = baselineY;
+      const rungs = new Array(m);
+      for (let i = m - 1; i >= 0; i--) {
+        const halfW = THREE.MathUtils.clamp(baseHalfW * letters[i].w, 2.0, maxHalfW);
+        rungs[i] = { xL: slotCenterX - halfW, xR: slotCenterX + halfW, y: currY };
+        if (i > 0) currY -= spanWeights[i - 1] * unitMm;
+      }
+      for (const r of rungs) {
+        leftPts.push({ x: r.xL, y: r.y });
+        rightPts.push({ x: r.xR, y: r.y });
+      }
+    }
+
+    doc.setDrawColor(...fgRgb);
+
+    // Linea di base
+    const baseLineSpan = Math.min(slotW * 0.48, maxHalfW + 3.5);
+    doc.line(slotCenterX - baseLineSpan, baselineY, slotCenterX + baseLineSpan, baselineY);
+
+    // Profili laterali sinistro e destro
+    for (let sIdx = 0; sIdx < leftPts.length - 1; sIdx++) {
+      doc.line(leftPts[sIdx].x, leftPts[sIdx].y, leftPts[sIdx + 1].x, leftPts[sIdx + 1].y);
+      doc.line(rightPts[sIdx].x, rightPts[sIdx].y, rightPts[sIdx + 1].x, rightPts[sIdx + 1].y);
+    }
+
+    // Pioli orizzontali
+    for (let idx = 0; idx < leftPts.length; idx++) {
+      doc.line(leftPts[idx].x, leftPts[idx].y, rightPts[idx].x, rightPts[idx].y);
+    }
+
+    // Pallini ai nodi (riempiti del colore sfondo e contornati del colore primo piano)
+    doc.setFillColor(...bgRgb);
+    doc.setDrawColor(...fgRgb);
+    const nodeR = Math.min(1.05, Math.max(0.65, slotW * 0.025));
+    for (let idx = 0; idx < leftPts.length; idx++) {
+      doc.circle(leftPts[idx].x, leftPts[idx].y, nodeR, 'FD');
+      doc.circle(rightPts[idx].x, rightPts[idx].y, nodeR, 'FD');
+    }
+  });
+}
+
+// --- Generazione PDF A4 secondo la Griglia Specimen ---
 function exportA4PDF() {
   if (!window.jspdf || !window.jspdf.jsPDF) return;
   const { jsPDF } = window.jspdf;
@@ -1248,93 +1351,155 @@ function exportA4PDF() {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageW = 210;
   const pageH = 297;
-  const margin = 16;
-  const contentW = pageW - margin * 2;
 
   const isDark = state.darkMode;
   const bgRgb = isDark ? [0, 0, 0] : [255, 255, 255];
   const fgRgb = isDark ? [255, 255, 255] : [17, 17, 17];
+  const specimenFont = getPdfFont();
 
+  // Sfondo pagina
   doc.setFillColor(...bgRgb);
   doc.rect(0, 0, pageW, pageH, 'F');
+
   doc.setFillColor(...fgRgb);
   doc.setDrawColor(...fgRgb);
-  doc.setLineWidth(0.28);
 
-  drawFontTextOnPDF(doc, 'ARCHTYPE', margin, 22, 18, 'left');
-  drawFontTextOnPDF(doc, `FONT: ${state.fontName}`, pageW - margin, 22, 10, 'right');
-  doc.line(margin, 26, pageW - margin, 26);
+  // 1. Testata A   RCH   TY   P   E (30pt, baseline a 14.5mm)
+  const headerY = 14.8;
+  drawFontTextOnPDF(doc, 'A', 7.0, headerY, 30, 'left', specimenFont);
+  drawFontTextOnPDF(doc, 'RCH', 45.1, headerY, 30, 'left', specimenFont);
+  drawFontTextOnPDF(doc, 'TY', 95.9, headerY, 30, 'left', specimenFont);
+  drawFontTextOnPDF(doc, 'P', 134.0, headerY, 30, 'left', specimenFont);
+  drawFontTextOnPDF(doc, 'E', 203.0, headerY, 30, 'right', specimenFont);
 
-  const imgData = renderHighQualityDataURL(2400, 2180, true);
-  doc.addImage(imgData, 'PNG', margin, 29, contentW, 160);
+  // 2. Filetti strutturali della griglia (0.5pt = 0.176mm)
+  doc.setLineWidth(0.18);
+  doc.line(7.0, 148.03, 203.0, 148.03);   // Orizzontale principale sotto Zona A
+  doc.line(7.0, 219.25, 101.4, 219.25);   // Orizzontale sinistra tra Zona B e Zona C
+  doc.line(108.6, 219.25, 203.0, 219.25); // Orizzontale destra tra Zona D e Colophon
+  doc.line(105.0, 151.50, 105.0, 291.00); // Verticale centrale inferiore
 
-  const specTop = 193;
-  doc.line(margin, specTop, pageW - margin, specTop);
+  // 3. ZONA A: Render principale con le impostazioni attuali (12.14, 27.50, 185.72 x 105.67 mm)
+  const zoneA = { x: 12.14, y: 27.50, w: 185.72, h: 105.67 };
+  const imgA = renderHighQualityDataURL(2600, Math.round(2600 * (zoneA.h / zoneA.w)), true);
+  doc.addImage(imgA, 'PNG', zoneA.x, zoneA.y, zoneA.w, zoneA.h);
 
+  // 4. ZONA B: Stessa prospettiva con densità al minimo (0) e traccia bassa (0.12)
+  const zoneB = { x: 12.14, y: 154.00, w: 82.86, h: 58.30 };
+  const prevDensity = state.sliders.density;
+  const prevStroke = state.sliders.stroke;
+
+  state.sliders.density = 0.0;
+  state.sliders.stroke = 0.14;
+  const imgB = renderHighQualityDataURL(1600, Math.round(1600 * (zoneB.h / zoneB.w)), true);
+
+  state.sliders.density = prevDensity;
+  state.sliders.stroke = prevStroke;
+  rebuildScene({ resetAngle: false, fit: false, highQuality: false });
+
+  doc.addImage(imgB, 'PNG', zoneB.x, zoneB.y, zoneB.w, zoneB.h);
+
+  // 5. ZONA C: Grafici vettoriali delle colonne (12.14, 225.10, 87.19 x 62.54 mm)
+  const zoneC = { x: 12.14, y: 225.10, w: 87.19, h: 62.54 };
+  drawColumnChartsOnPDF(doc, zoneC.x, zoneC.y, zoneC.w, zoneC.h, bgRgb, fgRgb);
+
+  // 6. ZONA D: Dati degli slider impaginati a epigrafe centrata in Gaisyr Book (110.67, 153.85, 87.19 x 62.54 mm)
+  const zoneD = { x: 110.67, y: 153.85, w: 87.19, h: 62.54 };
+  const dCenterX = zoneD.x + zoneD.w * 0.5;
   const dict = I18N[state.lang];
   const p = getComputedParams();
   const s = state.sliders;
 
-  let leftY = specTop + 8;
-  drawFontTextOnPDF(doc, dict.pdfPhrase, margin, leftY, 9.5, 'left');
-  leftY += 7;
-
-  const wordsList = state.words.length > 0 ? state.words : [{ text: 'ARCHTYPE', letters: [] }];
-  wordsList.forEach((wObj) => {
-    drawFontTextOnPDF(doc, wObj.text, margin, leftY, 15, 'left');
-    leftY += 6.5;
-  });
-
-  leftY += 3;
-  drawFontTextOnPDF(doc, dict.pdfColumns, margin, leftY, 9, 'left');
-  leftY += 5.5;
-
-  const modifiedCols = state.words.filter((w) =>
-    w.letters.some((l) => Math.abs(l.h - 1.0) > 0.02 || Math.abs(l.w - 1.0) > 0.02)
-  );
-
-  if (modifiedCols.length === 0) {
-    drawFontTextOnPDF(doc, dict.pdfNone, margin, leftY, 8.5, 'left');
-  } else {
-    modifiedCols.slice(0, 4).forEach((wObj) => {
-      const detail = wObj.letters
-        .map((l) => `${l.char}[${l.h.toFixed(1)}/${l.w.toFixed(1)}]`)
-        .join(' ');
-      drawFontTextOnPDF(doc, `${wObj.text}: ${detail}`.slice(0, 48), margin, leftY, 8, 'left');
-      leftY += 5;
-    });
-  }
-
-  const rightColX = pageW * 0.52;
-  let rightY = specTop + 8;
-  drawFontTextOnPDF(doc, dict.pdfParams, rightColX, rightY, 9.5, 'left');
-  rightY += 7;
-
-  const rows = [
-    [dict.height, `${p.heightScale.toFixed(2)}X (${Math.round(s.height * 100)}%)`],
-    [dict.width, `${p.widthScale.toFixed(2)}X (${Math.round(s.width * 100)}%)`],
-    [dict.rotation, `${Math.round(p.rotationDeg)} DEG (${Math.round(s.rotation * 100)}%)`],
-    [dict.entasi, `${p.entasi.toFixed(2)} (${Math.round(s.entasi * 100)}%)`],
-    [dict.density, `${p.sheetsPerUnit.toFixed(1)} / U (${Math.round(s.density * 100)}%)`],
-    [dict.thickness, `${p.sheetThickness.toFixed(3)} (${Math.round(s.thickness * 100)}%)`],
-    [dict.stroke, `${p.strokeWidth.toFixed(3)} (${Math.round(s.stroke * 100)}%)`],
+  const phraseStr = state.words.map((w) => w.text).join(' ') || 'ARCHTYPE';
+  const epigraphLines = [
+    `${dict.fontLabel}: ${state.fontName}`,
+    `${dict.textLabel}: ${phraseStr}`,
+    `${dict.height}: ${p.heightScale.toFixed(2)}X (${Math.round(s.height * 100)}%)`,
+    `${dict.width}: ${p.widthScale.toFixed(2)}X (${Math.round(s.width * 100)}%)`,
+    `${dict.rotation}: ${Math.round(p.rotationDeg)}° (${Math.round(s.rotation * 100)}%)`,
+    `${dict.entasi}: ${p.entasi.toFixed(2)} (${Math.round(s.entasi * 100)}%)`,
+    `${dict.density}: ${p.sheetsPerUnit.toFixed(1)} / U (${Math.round(s.density * 100)}%)`,
+    `${dict.thickness}: ${p.sheetThickness.toFixed(3)} (${Math.round(s.thickness * 100)}%)`,
+    `${dict.stroke}: ${p.strokeWidth.toFixed(3)} (${Math.round(s.stroke * 100)}%)`,
   ];
   if (state.words.length > 1) {
-    rows.push([dict.distance, `${p.clusterSpacing.toFixed(1)} (${Math.round(s.distance * 100)}%)`]);
+    epigraphLines.push(`${dict.distance}: ${p.clusterSpacing.toFixed(1)} (${Math.round(s.distance * 100)}%)`);
   }
 
-  rows.forEach(([label, val]) => {
-    drawFontTextOnPDF(doc, label, rightColX, rightY, 9.5, 'left');
-    drawFontTextOnPDF(doc, val, pageW - margin, rightY, 9.5, 'right');
-    rightY += 6.2;
+  doc.setFillColor(...fgRgb);
+  const lineStepMm = 4.6;
+  const totalBlockH = (epigraphLines.length - 1) * lineStepMm;
+  let cursorY = zoneD.y + (zoneD.h - totalBlockH) * 0.5 + 1.2;
+
+  epigraphLines.forEach((line) => {
+    drawFontTextOnPDF(doc, line, dCenterX, cursorY, 8.2, 'center', specimenFont);
+    cursorY += lineStepMm;
   });
 
-  doc.line(margin, pageH - 14, pageW - margin, pageH - 14);
-  drawFontTextOnPDF(doc, 'ARCHTYPE — GENERATIVE 3D TYPOGRAPHY', margin, pageH - 9, 8, 'left');
-  drawFontTextOnPDF(doc, 'A4 SPECIMEN', pageW - margin, pageH - 9, 8, 'right');
+  // 7. Testi fissi Colophon in basso a destra (ABCGaisyrTrial-Book 8pt)
+  const colophonPara1 =
+    state.lang === 'en'
+      ? [
+          'ARCHTYPE IS AN INTERACTIVE WEB TOOL',
+          'DESIGNED TO TRANSFORM TEXT AND TYPOGRAPHIC',
+          'CHARACTERS INTO THREE-DIMENSIONAL COLUMNS,',
+          'EXPLORING THE INTERSECTION OF EXPERIMENTAL',
+          'TYPOGRAPHY AND SPATIAL MODELING. THROUGH',
+          'AN INTUITIVE INTERFACE ACCESSIBLE DIRECTLY',
+          'FROM THE BROWSER, THE TOOL ALLOWS WRITING',
+          'CUSTOM TEXT AND APPLYING IT TO PRESET FONTS',
+          'OR UPLOADING LOCAL TYPEFACE FILES.',
+        ]
+      : [
+          'ARCHTYPE È UNO STRUMENTO WEB INTERATTIVO',
+          'PENSATO PER TRASFORMARE IL TESTO E I CARATTERI',
+          'TIPOGRAFICI IN COLONNE TRIDIMENSIONALI,',
+          "ESPLORANDO IL PUNTO D'INCONTRO TRA TIPOGRAFIA",
+          'SPERIMENTALE E MODELLAZIONE SPAZIALE. ATTRAVERSO',
+          "UN'INTERFACCIA INTUITIVA ACCESSIBILE DIRETTAMENTE",
+          'DAL BROWSER, IL TOOL CONSENTE DI SCRIVERE UN TESTO',
+          'PERSONALIZZATO E DI APPLICARLO A FONT PREIMPOSTATI',
+          'OPPURE DI CARICARE FILE TIPOGRAFICI LOCALI.',
+        ];
+
+  const colophonPara2 =
+    state.lang === 'en'
+      ? [
+          'THE TOOL WAS DEVELOPED DURING THE WORKSHOP',
+          'HELD BY GIANLUCA ALLA FOR THE GRAPHIC',
+          'DESIGN COURSE IN NOVEMBER 2026.',
+          'STARTING FROM A VISUAL REFERENCE FOUND IN',
+          'THE INSTITUTE LIBRARY AND WITH THE HELP',
+          'OF ARTIFICIAL INTELLIGENCE, THIS WEB',
+          'TOOL WAS DEVELOPED.',
+        ]
+      : [
+          'IL TOOL È STATO SVILUPPATO DURANTE IL WORKSHOP',
+          'TENUTO DA GIANLUCA ALLA PER IL CORSO DI',
+          'PROGETTAZIONE GRAFICA NEL MESE DI NOVEMBRE 2026.',
+          'PARTENDO DA UN RIFERIMENTO VISIVO TROVATO NELLA',
+          "BIBLIOTECA DELL'ISTITUTO E ATTRAVERSO L'AIUTO",
+          "DELL'INTELLIGENZA ARTIFICIALE, È STATO SVILUPPATO LO",
+          'STRUMENTO WEB.',
+        ];
+
+  const textColX = 113.03;
+  const textLeadingMm = 3.38;
+  let textY = 231.5;
+
+  colophonPara1.forEach((line) => {
+    drawFontTextOnPDF(doc, line, textColX, textY, 8.0, 'left', specimenFont);
+    textY += textLeadingMm;
+  });
+
+  textY = 265.2;
+  colophonPara2.forEach((line) => {
+    drawFontTextOnPDF(doc, line, textColX, textY, 8.0, 'left', specimenFont);
+    textY += textLeadingMm;
+  });
 
   const slug = state.text.trim().replace(/\s+/g, '_') || 'ARCHTYPE';
-  doc.save(`${slug}_A4.pdf`);
+  doc.save(`${slug}_SPECIMEN_A4.pdf`);
 }
 
 // --- COLONNA 2: Selettore Colonne ---
