@@ -21,7 +21,10 @@
   --fg: #111111;
   --muted: #777777;
   --line-w: 1px;
-  --col-w: 280px;
+  /* ~15.5% della larghezza schermo per ciascuna colonna (come nella reference), con limiti min/max */
+  --col-w: clamp(205px, 15.5vw, 380px);
+  --col-pad-x: clamp(16px, 1.5vw, 34px);
+  --ui-font-size: clamp(12px, 0.82vw, 16px);
   --font-ui: 'ABCGaisyrTrial', 'Cormorant Garamond', Georgia, serif;
 }
 
@@ -80,12 +83,13 @@ body.dark-mode .drop-overlay {
 }
 
 /* --- Titolo in Alto a Sinistra (A    RCH  T   Y   PE) --- */
+/* --- Titolo in Alto a Sinistra (A    RCH  T   Y   PE) --- */
 #top-header {
   position: fixed;
-  top: 20px;
+  top: clamp(14px, 1.8vh, 26px);
   left: 0;
-  right: 26px;
-  height: 44px;
+  right: var(--col-pad-x);
+  height: clamp(34px, 4vh, 52px);
   z-index: 40;
   pointer-events: none;
   mix-blend-mode: difference;
@@ -97,7 +101,7 @@ body.dark-mode .drop-overlay {
   width: 100%;
   height: 100%;
   font-family: var(--font-ui);
-  font-size: 38px;
+  font-size: clamp(28px, 2.2vw, 48px);
   font-weight: 400;
   line-height: 1;
 }
@@ -110,11 +114,11 @@ body.dark-mode .drop-overlay {
 }
 
 .seg-a {
-  left: 26px;
+  left: var(--col-pad-x);
 }
 
 .seg-rch {
-  left: calc(var(--col-w) + 22px);
+  left: calc(var(--col-w) + var(--col-pad-x) * 0.85);
   letter-spacing: 0.04em;
 }
 
@@ -123,19 +127,19 @@ body.dark-mode .drop-overlay {
 }
 
 .seg-y {
-  left: calc(var(--col-w) * 2 + clamp(54px, 7vw, 130px));
+  left: calc(var(--col-w) * 2 + clamp(44px, 6vw, 140px));
 }
 
 .seg-pe {
-  left: calc(var(--col-w) * 2 + clamp(150px, 18vw, 310px));
+  left: calc(var(--col-w) * 2 + clamp(130px, 17vw, 340px));
   letter-spacing: 0.04em;
 }
 
 /* --- Due Colonne Controlli a Sinistra --- */
 #left-panels {
   position: fixed;
-  top: 78px;
-  bottom: 22px;
+  top: clamp(62px, 7.2vh, 92px);
+  bottom: clamp(16px, 2.1vh, 28px);
   left: 0;
   width: calc(var(--col-w) * 2);
   display: flex;
@@ -147,7 +151,7 @@ body.dark-mode .drop-overlay {
   width: var(--col-w);
   height: 100%;
   border-right: var(--line-w) solid var(--fg);
-  padding: 6px 26px 4px 26px;
+  padding: 6px var(--col-pad-x) 4px var(--col-pad-x);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -160,7 +164,7 @@ body.dark-mode .drop-overlay {
   border: none;
   color: var(--fg);
   font-family: var(--font-ui);
-  font-size: 14px;
+  font-size: var(--ui-font-size);
   font-weight: 400;
   letter-spacing: 0.05em;
   text-decoration: underline;
@@ -203,14 +207,14 @@ body.dark-mode .drop-overlay {
 .font-dropdown-trigger {
   position: relative;
   width: 100%;
-  height: 33px;
+  height: clamp(29px, 3.1vh, 38px);
   background: var(--bg);
   color: var(--fg);
   border: var(--line-w) solid var(--fg);
   border-radius: 0;
   box-shadow: none;
   font-family: var(--font-ui);
-  font-size: 13.5px;
+  font-size: calc(var(--ui-font-size) - 0.5px);
   font-weight: 400;
   letter-spacing: 0.05em;
   display: flex;
@@ -261,7 +265,7 @@ body.dark-mode .drop-overlay {
 
 .font-option {
   width: 100%;
-  min-height: 31px;
+  min-height: clamp(27px, 2.9vh, 35px);
   background: var(--bg);
   color: var(--fg);
   border: none;
@@ -269,7 +273,7 @@ body.dark-mode .drop-overlay {
   border-radius: 0;
   box-shadow: none;
   font-family: var(--font-ui);
-  font-size: 13px;
+  font-size: calc(var(--ui-font-size) - 1px);
   font-weight: 400;
   letter-spacing: 0.05em;
   text-align: center;
@@ -291,7 +295,7 @@ body.dark-mode .drop-overlay {
 
 /* Gruppo Box di Testo con intestazione TESTO */
 .textbox-group {
-  margin-top: 24px;
+  margin-top: clamp(14px, 2.2vh, 28px);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -309,14 +313,14 @@ body.dark-mode .drop-overlay {
 
 #text-input {
   width: 100%;
-  height: 68px;
+  height: clamp(54px, 6.4vh, 80px);
   border: none;
   outline: none;
   resize: none;
   background: transparent;
   color: var(--fg);
   font-family: var(--font-ui);
-  font-size: 14px;
+  font-size: var(--ui-font-size);
   font-weight: 400;
   line-height: 1.24;
   letter-spacing: 0.05em;
@@ -336,7 +340,7 @@ body.dark-mode .drop-overlay {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 28px 4px 25px 4px;
+  padding: clamp(14px, 2.4vh, 30px) 4px clamp(16px, 2.4vh, 28px) 4px;
 }
 
 .slider-item {
@@ -354,7 +358,7 @@ body.dark-mode .drop-overlay {
 }
 
 .slider-label {
-  font-size: 13.5px;
+  font-size: var(--ui-font-size);
   font-weight: 400;
   letter-spacing: 0.05em;
   line-height: 1;

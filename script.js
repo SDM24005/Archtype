@@ -1481,10 +1481,18 @@ function renderColumnVisualizer() {
 
   const fgColor = state.darkMode ? '#ffffff' : '#111111';
   const cx = boxW * 0.5;
-  const baselineY = boxH - 32;
+  const baselineOffset = Math.max(18, Math.round(boxH * 0.055));
+  const baselineY = boxH - baselineOffset;
+
+  // Allinea esattamente la linea dell'ultimo slider alla linea di base del grafico
+  const slidersEl = document.getElementById('global-sliders');
+  if (slidersEl) {
+    slidersEl.style.paddingBottom = `${baselineOffset}px`;
+  }
+
   const availH = Math.max(40, baselineY - 14);
   const maxHalfW = Math.max(28, boxW * 0.42);
-  const baseHalfW = Math.min(34, maxHalfW * 0.56);
+  const baseHalfW = Math.min(boxW * 0.16, maxHalfW * 0.56);
 
   const m = letters.length;
   const spanWeights =
@@ -1493,7 +1501,7 @@ function renderColumnVisualizer() {
       : Array.from({ length: m - 1 }, (_, i) => (letters[i].h + letters[i + 1].h) * 0.5);
 
   const totalSpanWeight = spanWeights.reduce((a, b) => a + b, 0);
-  const naturalUnitPx = 34;
+  const naturalUnitPx = Math.max(22, boxH * 0.065);
   const unitPx =
     totalSpanWeight * naturalUnitPx > availH
       ? availH / Math.max(totalSpanWeight, 0.2)
