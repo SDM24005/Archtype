@@ -850,13 +850,18 @@ function getWordSlices(validLetters, layers, totalHeightWeight, sheetThickness, 
 
   const strokeW = strokeWidth;
 
-  if (validLetters.length === 1) {
-    const g = validLetters[0].glyph;
+  // Costruisce una singola volta la geometria vettoriale originale (non deformata) per ogni lettera
+  const pureLetterMeshes = validLetters.map((l) => {
+    const g = l.glyph;
     const bodyGeo = buildSheetBodyGeometry(g.shapes, sheetThickness, curveSeg);
     bodyGeo.translate(-g.center.x, -g.center.y, 0);
     const strokeGeo = buildDualStrokeGeometry(g.shapes, strokeW, sheetThickness, strokeDiv);
     strokeGeo.translate(-g.center.x, -g.center.y, 0);
-    const shared = { bodyGeo, strokeGeo };
+    return { bodyGeo, strokeGeo };
+  });
+
+  if (validLetters.length === 1) {
+    const shared = pureLetterMeshes[0];
     const slices = Array.from({ length: layers }, () => shared);
     setWordMeshCache(cacheKey, slices);
     return slices;
@@ -866,15 +871,32 @@ function getWordSlices(validLetters, layers, totalHeightWeight, sheetThickness, 
   if (layers === validLetters.length) {
     const slices = [];
     for (let i = validLetters.length - 1; i >= 0; i--) {
-      const g = validLetters[i].glyph;
-      const bodyGeo = buildSheetBodyGeometry(g.shapes, sheetThickness, curveSeg);
-      bodyGeo.translate(-g.center.x, -g.center.y, 0);
-      const strokeGeo = buildDualStrokeGeometry(g.shapes, strokeW, sheetThickness, strokeDiv);
-      strokeGeo.translate(-g.center.x, -g.center.y, 0);
-      slices.push({ bodyGeo, strokeGeo });
+      slices.push(pureLetterMeshes[i]);
     }
     setWordMeshCache(cacheKey, slices);
     return slices;
+  }
+
+  // Posizioni normalizzate (topDown da 0 = prima lettera in alto a 1 = ultima lettera in basso)
+  const m = validLetters.length;
+  const spanWeights = Array.from({ length: m - 1 }, (_, i) => (validLetters[i].h + validLetters[i + 1].h) * 0.5);
+  const totalSpan = Math.max(spanWeights.reduce((a, b) => a + b, 0), 1e-5);
+
+  const centers = [0];
+  let acc = 0;
+  for (let i = 0; i < m - 1; i++) {
+    acc += spanWeights[i];
+    centers.push(acc / totalSpan);
+  }
+  centers[m - 1] = 1;
+
+  // Associa ciascuna lettera fissa al layer i più vicino alla sua quota esatta
+  const pureLayerMap = new Map();
+  for (let lIdx = 0; lIdx < m; lIdx++) {
+    const targetTopDown = centers[lIdx];
+    const targetT = 1 - targetTopDown;
+    const nearestI = THREE.MathUtils.clamp(Math.round(targetT * (layers - 1)), 0, layers - 1);
+    pureLayerMap.set(nearestI, pureLetterMeshes[lIdx]);
   }
 
   const maxSolids = Math.max(1, ...validLetters.map((l) => l.glyph.morphSolids.length));
@@ -894,15 +916,14 @@ function getWordSlices(validLetters, layers, totalHeightWeight, sheetThickness, 
     return { solids, holes };
   });
 
-  const centers = [];
-  let acc = 0;
-  for (const l of validLetters) {
-    centers.push((acc + l.h * 0.5) / totalHeightWeight);
-    acc += l.h;
-  }
-
   const slices = [];
   for (let i = 0; i < layers; i++) {
+    // Se questo layer corrisponde a una lettera fissa, usa il glifo puro non deformato
+    if (pureLayerMap.has(i)) {
+      slices.push(pureLayerMap.get(i));
+      continue;
+    }
+
     const t = layers > 1 ? i / (layers - 1) : 1;
     const topDown = 1 - t;
 
@@ -980,12 +1001,17 @@ function getWordSlices(validLetters, layers, totalHeightWeight, sheetThickness, 
 function sampleLetterWidthAt(validLetters, totalHeightWeight, topDown) {
   if (validLetters.length === 1) return validLetters[0].w;
 
-  const centers = [];
+  const m = validLetters.length;
+  const spanWeights = Array.from({ length: m - 1 }, (_, i) => (validLetters[i].h + validLetters[i + 1].h) * 0.5);
+  const totalSpan = Math.max(spanWeights.reduce((a, b) => a + b, 0), 1e-5);
+
+  const centers = [0];
   let acc = 0;
-  for (const l of validLetters) {
-    centers.push((acc + l.h * 0.5) / totalHeightWeight);
-    acc += l.h;
+  for (let i = 0; i < m - 1; i++) {
+    acc += spanWeights[i];
+    centers.push(acc / totalSpan);
   }
+  centers[m - 1] = 1;
 
   if (topDown <= centers[0]) return validLetters[0].w;
   if (topDown >= centers[centers.length - 1]) return validLetters[validLetters.length - 1].w;
